@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>WebSocket Lobby</title>
+<style>
+  body {
+    background:#111;
+    color:#fff;
+    font-family:Arial;
+    display:flex;
+    justify-content:center;
+    align-items:center;
+    height:100vh;
+  }
+  #box {
+    background:#222;
+    padding:20px;
+    width:300px;
+    border-radius:8px;
+  }
+  input, button {
+    width:100%;
+    padding:8px;
+    margin-top:8px;
+  }
+</style>
+</head>
+<body>
+
+<div id="box">
+  <div id="login">
+    <h2>Join Lobby</h2>
+    <input id="username" placeholder="Username">
+    <button onclick="join()">Join</button>
+  </div>
+
+  <div id="lobby" style="display:none;">
+    <h2>Lobby</h2>
+    <ul id="players"></ul>
+  </div>
+</div>
+
+<script>
+  const players = {};
+  let username;
+  let ws;
+
+  function join() {
+    username = document.getElementById("username").value.trim();
+    if (!username) return alert("Enter username");
+
+    ws = new WebSocket(
+      "wss://demo.piesocket.com/v3/channel_1?api_key=demokey&notify_self=1"
+    );
+
+    ws.onopen = () => {
+      send({ type: "join", name: username });
+    };
+
+    ws.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+
+      if (data.type === "join") {
+        players[data.name] = true;
+      }
+
+      if (data.type === "leave") {
+        delete players[data.name];
+      }
+
+      render();
+    };
+
+    window.addEventListener("beforeunload", () => {
+      send({ type: "leave", name: username });
+    });
+
+    document.getElementById("login").style.display = "none";
+    document.getElementById("lobby").style.display = "block";
+  }
+
+  function send(obj) {
+    ws.send(JSON.stringify(obj));
+  }
+
+  function render() {
+    const ul = document.getElementById("players");
+    ul.innerHTML = "";
+    Object.keys(players).forEach(name => {
+      const li = document.createElement("li");
+      li.textContent = name;
+      ul.appendChild(li);
+    });
+  }
+</script>
+
+</body>
+</html>
