@@ -206,88 +206,37 @@
     </div>
 
     <script>
-        const players = new Map();
-        let ws;
-        let username;
-        let isConnected = false;
+const SERVER = "https://your-repl-name.username.repl.co";
 
-        // Configuration - UPDATE THIS WITH YOUR REPLIT URL
- // If your Replit is published at https://mygame.username.repl.co
-const WEBSOCKET_URL = `ws://${window.location.host}`;
+const players = new Set();
+let username;
 
-        document.getElementById("joinBtn").onclick = connectToLobby;
-        document.getElementById("exitBtn").onclick = leaveLobby;
+// Connect to lobby stream
+const events = new EventSource(`${SERVER}/events`);
+events.onmessage = (e) => {
+  players.clear();
+  JSON.parse(e.data).forEach(p => players.add(p));
+  render();
+};
 
-        function connectToLobby() {
-            username = document.getElementById("username").value.trim();
-            if (!username) {
-                showStatus("Please enter a username", "error", "login");
-                return;
-            }
+// Join lobby
+function join(name) {
+  username = name;
+  fetch(`${SERVER}/action`, {
+    method: "POST",
+    body: JSON.stringify({ type: "join", name })
+  });
+}
 
-            showStatus("Connecting to lobby...", "connecting", "login");
-
-            try {
-                ws = new WebSocket(WEBSOCKET_URL);
-
-                ws.onopen = () => {
-                    isConnected = true;
-                    showStatus("Connected!", "connected", "login");
-                    send("join", username);
-                    switchToLobby();
-                };
-
-                ws.onmessage = (e) => {
-                    try {
-                        const msg = JSON.parse(e.data);
-
-                        if (msg.event === "join") {
-                            players.set(msg.data, true);
-                            updatePlayersList();
-                        }
-
-                        if (msg.event === "leave") {
-                            players.delete(msg.data);
-                            updatePlayersList();
-                        }
-                    } catch (error) {
-                        console.error("Error parsing message:", error);
-                    }
-                };
-
-                ws.onerror = (error) => {
-                    console.error("WebSocket error:", error);
-                    showStatus("Connection error. Check the WebSocket URL!", "error", "login");
-                    isConnected = false;
-                };
-
-                ws.onclose = () => {
-                    isConnected = false;
-                    players.clear();
-                    switchToLogin();
-                    showStatus("Disconnected from lobby", "error", "login");
-                };
-            } catch (error) {
-                console.error("Error connecting:", error);
-                showStatus("Failed to connect", "error", "login");
-            }
-        }
-
-        function leaveLobby() {
-            if (ws && isConnected) {
-                send("leave", username);
-                ws.close();
-            }
-            switchToLogin();
-            document.getElementById("username").value = "";
-            players.clear();
-        }
-
-        function send(event, data) {
-            if (ws && isConnected && ws.readyState === WebSocket.OPEN) {
-                ws.send(JSON.stringify({ event, data }));
-            }
-        }
+// Leave lobby
+window.addEventListener("beforeunload", () => {
+  if (username) {
+    fetch(`${SERVER}/action`, {
+      method: "POST",
+      body: JSON.stringify({ type: "leave", name: username })
+    });
+  }
+});
 
         function updatePlayersList() {
             const playersList = document.getElementById("playersList");
