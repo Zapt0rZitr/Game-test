@@ -50,9 +50,8 @@ document.getElementById("joinBtn").onclick = () => {
   username = document.getElementById("username").value.trim();
   if (!username) return alert("Enter a username");
 
-  ws = new WebSocket(
-    "wss://demo.piesocket.com/v3/1?api_key=demokey&notify_self=1"
-  );
+  const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+  ws = new WebSocket(`${protocol}//${window.location.host}`);
 
   ws.onopen = () => {
     send("join", username);
