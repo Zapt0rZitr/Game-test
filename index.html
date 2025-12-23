@@ -1,101 +1,340 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-<meta charset="UTF-8">
-<title>WebSocket Lobby</title>
-<style>
-  body {
-    background:#111;
-    color:#fff;
-    font-family:Arial;
-    display:flex;
-    justify-content:center;
-    align-items:center;
-    height:100vh;
-  }
-  #box {
-    background:#222;
-    padding:20px;
-    width:320px;
-    border-radius:8px;
-  }
-  input, button {
-    width:100%;
-    padding:8px;
-    margin-top:8px;
-  }
-</style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebSocket Game Lobby</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+            max-width: 500px;
+            width: 100%;
+            padding: 40px;
+        }
+
+        h1 {
+            color: #333;
+            margin-bottom: 30px;
+            text-align: center;
+        }
+
+        #login {
+            display: block;
+        }
+
+        #lobby {
+            display: none;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            color: #555;
+            font-weight: 500;
+        }
+
+        input {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #ddd;
+            border-radius: 5px;
+            font-size: 16px;
+            transition: border-color 0.3s;
+        }
+
+        input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        button {
+            width: 100%;
+            padding: 12px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 5px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+        }
+
+        button:active {
+            transform: translateY(0);
+        }
+
+        .status {
+            text-align: center;
+            margin-top: 20px;
+            padding: 10px;
+            border-radius: 5px;
+            font-size: 14px;
+        }
+
+        .status.connecting {
+            background: #fff3cd;
+            color: #856404;
+            display: block;
+        }
+
+        .status.connected {
+            background: #d4edda;
+            color: #155724;
+            display: block;
+        }
+
+        .status.error {
+            background: #f8d7da;
+            color: #721c24;
+            display: block;
+        }
+
+        .status {
+            display: none;
+        }
+
+        .players-list {
+            margin-top: 30px;
+        }
+
+        .players-list h2 {
+            color: #333;
+            font-size: 18px;
+            margin-bottom: 15px;
+            border-bottom: 2px solid #667eea;
+            padding-bottom: 10px;
+        }
+
+        .player-item {
+            background: #f5f5f5;
+            padding: 12px;
+            margin-bottom: 8px;
+            border-radius: 5px;
+            display: flex;
+            align-items: center;
+            color: #333;
+        }
+
+        .player-item::before {
+            content: '👤';
+            margin-right: 10px;
+            font-size: 18px;
+        }
+
+        .player-item.you::before {
+            content: '👉';
+        }
+
+        .player-count {
+            text-align: center;
+            color: #999;
+            font-size: 14px;
+            margin-top: 20px;
+        }
+
+        .exit-btn {
+            background: #dc3545;
+            margin-top: 20px;
+        }
+
+        .exit-btn:hover {
+            background: #c82333;
+        }
+    </style>
 </head>
 <body>
+    <div class="container">
+        <!-- Login Section -->
+        <div id="login">
+            <h1>🎮 Game Lobby</h1>
+            <div class="form-group">
+                <label for="username">Enter your username:</label>
+                <input 
+                    type="text" 
+                    id="username" 
+                    placeholder="Your username" 
+                    maxlength="20"
+                >
+            </div>
+            <button id="joinBtn">Join Lobby</button>
+            <div id="loginStatus" class="status"></div>
+        </div>
 
-<div id="box">
-  <div id="login">
-    <h2>Join Lobby</h2>
-    <input id="username" placeholder="Username">
-    <button id="joinBtn">Join</button>
-  </div>
+        <!-- Lobby Section -->
+        <div id="lobby">
+            <h1>⚔️ Lobby</h1>
+            <div id="welcomeMsg" style="text-align: center; color: #667eea; margin-bottom: 20px; font-weight: 600;"></div>
+            
+            <div class="players-list">
+                <h2>Players Online</h2>
+                <div id="playersList"></div>
+            </div>
+            
+            <div class="player-count">
+                Total players: <span id="playerCount">1</span>
+            </div>
 
-  <div id="lobby" style="display:none;">
-    <h2>Lobby</h2>
-    <ul id="players"></ul>
-  </div>
-</div>
+            <button class="exit-btn" id="exitBtn">Leave Lobby</button>
+        </div>
+    </div>
 
-<script>
-const players = new Map();
-let ws;
-let username;
+    <script>
+        const players = new Map();
+        let ws;
+        let username;
+        let isConnected = false;
 
-document.getElementById("joinBtn").onclick = () => {
-  username = document.getElementById("username").value.trim();
-  if (!username) return alert("Enter a username");
+        // Configuration - UPDATE THIS WITH YOUR REPLIT URL
+        const WEBSOCKET_URL = 'wss://idk--Zapt0rWut.replit.dev'; // Replace with your Replit project URL
 
-const replotUrl = "idk--Zapt0rWut.replit.app"; // Replace with your actual Replit URL
-ws = new WebSocket(replotUrl);
+        document.getElementById("joinBtn").onclick = connectToLobby;
+        document.getElementById("exitBtn").onclick = leaveLobby;
 
-  ws.onmessage = (e) => {
-    const msg = JSON.parse(e.data);
+        function connectToLobby() {
+            username = document.getElementById("username").value.trim();
+            if (!username) {
+                showStatus("Please enter a username", "error", "login");
+                return;
+            }
 
-    if (msg.event === "join") {
-      players.set(msg.data, true);
-    }
+            showStatus("Connecting to lobby...", "connecting", "login");
 
-    if (msg.event === "leave") {
-      players.delete(msg.data);
-    }
+            try {
+                ws = new WebSocket(WEBSOCKET_URL);
 
-    render();
-  };
+                ws.onopen = () => {
+                    isConnected = true;
+                    showStatus("Connected!", "connected", "login");
+                    send("join", username);
+                    switchToLobby();
+                };
 
-  ws.onclose = () => {
-    players.clear();
-    render();
-  };
+                ws.onmessage = (e) => {
+                    try {
+                        const msg = JSON.parse(e.data);
 
-  document.getElementById("login").style.display = "none";
-  document.getElementById("lobby").style.display = "block";
-};
+                        if (msg.event === "join") {
+                            players.set(msg.data, true);
+                            updatePlayersList();
+                        }
 
-function send(event, data) {
-  ws.send(JSON.stringify({ event, data }));
-}
+                        if (msg.event === "leave") {
+                            players.delete(msg.data);
+                            updatePlayersList();
+                        }
+                    } catch (error) {
+                        console.error("Error parsing message:", error);
+                    }
+                };
 
-function render() {
-  const ul = document.getElementById("players");
-  ul.innerHTML = "";
-  players.forEach((_, name) => {
-    const li = document.createElement("li");
-    li.textContent = name;
-    ul.appendChild(li);
-  });
-}
+                ws.onerror = (error) => {
+                    console.error("WebSocket error:", error);
+                    showStatus("Connection error. Check the WebSocket URL!", "error", "login");
+                    isConnected = false;
+                };
 
-window.addEventListener("beforeunload", () => {
-  if (ws && ws.readyState === WebSocket.OPEN) {
-    send("leave", username);
-  }
-});
-</script>
+                ws.onclose = () => {
+                    isConnected = false;
+                    players.clear();
+                    switchToLogin();
+                    showStatus("Disconnected from lobby", "error", "login");
+                };
+            } catch (error) {
+                console.error("Error connecting:", error);
+                showStatus("Failed to connect", "error", "login");
+            }
+        }
 
+        function leaveLobby() {
+            if (ws && isConnected) {
+                send("leave", username);
+                ws.close();
+            }
+            switchToLogin();
+            document.getElementById("username").value = "";
+            players.clear();
+        }
+
+        function send(event, data) {
+            if (ws && isConnected && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ event, data }));
+            }
+        }
+
+        function updatePlayersList() {
+            const playersList = document.getElementById("playersList");
+            playersList.innerHTML = "";
+            
+            players.forEach((_, name) => {
+                const playerDiv = document.createElement("div");
+                playerDiv.className = "player-item" + (name === username ? " you" : "");
+                playerDiv.textContent = name + (name === username ? " (you)" : "");
+                playersList.appendChild(playerDiv);
+            });
+
+            document.getElementById("playerCount").textContent = players.size;
+        }
+
+        function switchToLobby() {
+            document.getElementById("login").style.display = "none";
+            document.getElementById("lobby").style.display = "block";
+            document.getElementById("welcomeMsg").textContent = `Welcome, ${username}! 👋`;
+            updatePlayersList();
+        }
+
+        function switchToLogin() {
+            document.getElementById("login").style.display = "block";
+            document.getElementById("lobby").style.display = "none";
+        }
+
+        function showStatus(message, type, section) {
+            const statusEl = document.getElementById(section + "Status");
+            if (statusEl) {
+                statusEl.textContent = message;
+                statusEl.className = "status " + type;
+            }
+        }
+
+        // Auto-connect if user presses Enter in the username field
+        document.getElementById("username").addEventListener("keypress", (e) => {
+            if (e.key === "Enter") {
+                connectToLobby();
+            }
+        });
+
+        // Clean up on page leave
+        window.addEventListener("beforeunload", () => {
+            if (ws && isConnected) {
+                send("leave", username);
+            }
+        });
+    </script>
 </body>
 </html>
