@@ -50,12 +50,8 @@ document.getElementById("joinBtn").onclick = () => {
   username = document.getElementById("username").value.trim();
   if (!username) return alert("Enter a username");
 
-  const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-  ws = new WebSocket(`${protocol}//${window.location.host}`);
-
-  ws.onopen = () => {
-    send("join", username);
-  };
+const replotUrl = "wss://@Zapt0rWut/idk.replit.dev"; // Replace with your actual Replit URL
+ws = new WebSocket(replotUrl);
 
   ws.onmessage = (e) => {
     const msg = JSON.parse(e.data);
