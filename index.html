@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
 <meta charset="UTF-8">
 <title>WebSocket Lobby</title>
@@ -16,7 +16,7 @@
   #box {
     background:#222;
     padding:20px;
-    width:300px;
+    width:320px;
     border-radius:8px;
   }
   input, button {
@@ -32,7 +32,7 @@
   <div id="login">
     <h2>Join Lobby</h2>
     <input id="username" placeholder="Username">
-    <button onclick="join()">Join</button>
+    <button id="joinBtn">Join</button>
   </div>
 
   <div id="lobby" style="display:none;">
@@ -42,57 +42,64 @@
 </div>
 
 <script>
-  const players = {};
-  let username;
-  let ws;
+const players = new Map();
+let ws;
+let username;
 
-  function join() {
-    username = document.getElementById("username").value.trim();
-    if (!username) return alert("Enter username");
+document.getElementById("joinBtn").onclick = () => {
+  username = document.getElementById("username").value.trim();
+  if (!username) return alert("Enter a username");
 
-    ws = new WebSocket(
-      "wss://demo.piesocket.com/v3/channel_1?api_key=demokey&notify_self=1"
-    );
+  ws = new WebSocket(
+    "wss://demo.piesocket.com/v3/1?api_key=demokey&notify_self=1"
+  );
 
-    ws.onopen = () => {
-      send({ type: "join", name: username });
-    };
+  ws.onopen = () => {
+    send("join", username);
+  };
 
-    ws.onmessage = (event) => {
-      const data = JSON.parse(event.data);
+  ws.onmessage = (e) => {
+    const msg = JSON.parse(e.data);
 
-      if (data.type === "join") {
-        players[data.name] = true;
-      }
+    if (msg.event === "join") {
+      players.set(msg.data, true);
+    }
 
-      if (data.type === "leave") {
-        delete players[data.name];
-      }
+    if (msg.event === "leave") {
+      players.delete(msg.data);
+    }
 
-      render();
-    };
+    render();
+  };
 
-    window.addEventListener("beforeunload", () => {
-      send({ type: "leave", name: username });
-    });
+  ws.onclose = () => {
+    players.clear();
+    render();
+  };
 
-    document.getElementById("login").style.display = "none";
-    document.getElementById("lobby").style.display = "block";
+  document.getElementById("login").style.display = "none";
+  document.getElementById("lobby").style.display = "block";
+};
+
+function send(event, data) {
+  ws.send(JSON.stringify({ event, data }));
+}
+
+function render() {
+  const ul = document.getElementById("players");
+  ul.innerHTML = "";
+  players.forEach((_, name) => {
+    const li = document.createElement("li");
+    li.textContent = name;
+    ul.appendChild(li);
+  });
+}
+
+window.addEventListener("beforeunload", () => {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    send("leave", username);
   }
-
-  function send(obj) {
-    ws.send(JSON.stringify(obj));
-  }
-
-  function render() {
-    const ul = document.getElementById("players");
-    ul.innerHTML = "";
-    Object.keys(players).forEach(name => {
-      const li = document.createElement("li");
-      li.textContent = name;
-      ul.appendChild(li);
-    });
-  }
+});
 </script>
 
 </body>
