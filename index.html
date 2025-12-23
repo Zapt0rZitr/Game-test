@@ -212,7 +212,8 @@
         let isConnected = false;
 
         // Configuration - UPDATE THIS WITH YOUR REPLIT URL
-        const WEBSOCKET_URL = 'wss://idk--Zapt0rWut.replit.dev'; // Replace with your Replit project URL
+ // If your Replit is published at https://mygame.username.repl.co
+const WEBSOCKET_URL = `ws://${window.location.host}`;
 
         document.getElementById("joinBtn").onclick = connectToLobby;
         document.getElementById("exitBtn").onclick = leaveLobby;
