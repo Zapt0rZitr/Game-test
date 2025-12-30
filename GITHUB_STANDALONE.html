@@ -1,0 +1,509 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GitHub Game Lobby</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      background: linear-gradient(135deg, #f5f5f5 0%, #e0e0e0 100%);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1rem;
+    }
+
+    body.dark {
+      background: linear-gradient(135deg, #1a1a1a 0%, #0d0d0d 100%);
+    }
+
+    .card {
+      background: white;
+      border-radius: 8px;
+      padding: 2rem;
+      max-width: 500px;
+      width: 100%;
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    }
+
+    body.dark .card {
+      background: #1f1f1f;
+      color: #e0e0e0;
+    }
+
+    h1 {
+      font-size: 1.875rem;
+      font-weight: bold;
+      margin-bottom: 0.5rem;
+    }
+
+    .subtitle {
+      color: #666;
+      margin-bottom: 2rem;
+      font-size: 0.95rem;
+    }
+
+    body.dark .subtitle {
+      color: #999;
+    }
+
+    form {
+      margin-bottom: 1.5rem;
+    }
+
+    .form-group {
+      margin-bottom: 1rem;
+    }
+
+    label {
+      display: block;
+      font-size: 0.875rem;
+      font-weight: 500;
+      margin-bottom: 0.5rem;
+    }
+
+    input[type="text"] {
+      width: 100%;
+      padding: 0.5rem;
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      font-size: 1rem;
+      font-family: inherit;
+    }
+
+    body.dark input[type="text"] {
+      background: #2a2a2a;
+      border-color: #444;
+      color: #e0e0e0;
+    }
+
+    input[type="text"]:focus {
+      outline: none;
+      border-color: #2563eb;
+      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+    }
+
+    button {
+      width: 100%;
+      padding: 0.625rem;
+      background: #2563eb;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      font-size: 1rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+
+    button:hover:not(:disabled) {
+      background: #1d4ed8;
+    }
+
+    button:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+
+    body.dark button {
+      background: #3b82f6;
+    }
+
+    body.dark button:hover:not(:disabled) {
+      background: #2563eb;
+    }
+
+    .players-section {
+      background: #f9f9f9;
+      border-radius: 6px;
+      padding: 1.5rem;
+      margin-top: 2rem;
+    }
+
+    body.dark .players-section {
+      background: #2a2a2a;
+    }
+
+    .players-section h3 {
+      font-weight: 600;
+      margin-bottom: 1rem;
+      font-size: 1.1rem;
+    }
+
+    .players-list {
+      list-style: none;
+    }
+
+    .players-list li {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.9rem;
+      padding: 0.5rem 0;
+      border-bottom: 1px solid #eee;
+    }
+
+    body.dark .players-list li {
+      border-bottom-color: #444;
+    }
+
+    .players-list li:last-child {
+      border-bottom: none;
+    }
+
+    .time {
+      font-size: 0.8rem;
+      color: #999;
+    }
+
+    body.dark .time {
+      color: #666;
+    }
+
+    .empty-state {
+      color: #999;
+      font-size: 0.9rem;
+    }
+
+    body.dark .empty-state {
+      color: #666;
+    }
+
+    .lobby-view {
+      max-width: 800px;
+    }
+
+    .lobby-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 2rem;
+    }
+
+    .lobby-header h1 {
+      margin: 0;
+    }
+
+    .leave-btn {
+      background: #ef4444;
+      padding: 0.5rem 1rem;
+      width: auto;
+    }
+
+    .leave-btn:hover {
+      background: #dc2626;
+    }
+
+    .players-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+      gap: 1rem;
+      margin-top: 1rem;
+    }
+
+    .player-card {
+      background: white;
+      border: 1px solid #e5e5e5;
+      border-radius: 6px;
+      padding: 1rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    body.dark .player-card {
+      background: #1f1f1f;
+      border-color: #333;
+    }
+
+    .player-info p:first-child {
+      font-weight: 500;
+      margin-bottom: 0.25rem;
+    }
+
+    .player-info p:last-child {
+      font-size: 0.8rem;
+      color: #999;
+    }
+
+    body.dark .player-info p:last-child {
+      color: #666;
+    }
+
+    .you-badge {
+      background: #2563eb;
+      color: white;
+      font-size: 0.75rem;
+      padding: 0.25rem 0.5rem;
+      border-radius: 4px;
+    }
+
+    .toast {
+      position: fixed;
+      top: 1rem;
+      right: 1rem;
+      background: #333;
+      color: white;
+      padding: 1rem;
+      border-radius: 6px;
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2);
+      animation: slideIn 0.3s ease-out;
+      z-index: 1000;
+    }
+
+    @keyframes slideIn {
+      from {
+        transform: translateX(400px);
+        opacity: 0;
+      }
+      to {
+        transform: translateX(0);
+        opacity: 1;
+      }
+    }
+
+    .toast.error {
+      background: #dc2626;
+    }
+
+    .toast.success {
+      background: #059669;
+    }
+
+    .connection-status {
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #ef4444;
+      margin-left: 0.5rem;
+    }
+
+    .connection-status.connected {
+      background: #10b981;
+    }
+  </style>
+</head>
+<body>
+  <div id="app"></div>
+
+  <script>
+    const API_BASE = 'https://node-weaver--Zapt0rWut.replit.app'; // Change this to your Replit backend URL
+
+    interface Player {
+      id: number;
+      name: string;
+      joinedAt: string;
+    }
+
+    let currentPlayer = null;
+    let players = [];
+    let ws = null;
+    let isConnected = false;
+
+    function initializeFromStorage() {
+      const stored = localStorage.getItem('currentPlayer');
+      if (stored) {
+        try {
+          currentPlayer = JSON.parse(stored);
+        } catch (e) {
+          localStorage.removeItem('currentPlayer');
+        }
+      }
+    }
+
+    function connectWebSocket() {
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const url = `${protocol}//${API_BASE.replace(/^https?:\/\//, '')}/ws`;
+      
+      ws = new WebSocket(url);
+
+      ws.onopen = () => {
+        isConnected = true;
+        console.log('Connected to lobby');
+        render();
+      };
+
+      ws.onmessage = (event) => {
+        const message = JSON.parse(event.data);
+
+        if (message.type === 'lobbyState') {
+          players = message.payload;
+        } else if (message.type === 'playerJoined') {
+          players.push(message.payload);
+        } else if (message.type === 'playerLeft') {
+          players = players.filter((p) => p.id !== message.payload.id);
+        }
+        render();
+      };
+
+      ws.onerror = () => {
+        isConnected = false;
+        console.error('WebSocket error');
+        render();
+      };
+
+      ws.onclose = () => {
+        isConnected = false;
+      };
+    }
+
+    async function joinLobby(name) {
+      try {
+        const res = await fetch(`${API_BASE}/api/players`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: name.trim() }),
+        });
+
+        if (res.status === 409) {
+          showToast('Name already taken', 'error');
+          return;
+        }
+
+        if (!res.ok) throw new Error('Failed to join');
+
+        const player = await res.json();
+        currentPlayer = player;
+        localStorage.setItem('currentPlayer', JSON.stringify(player));
+        showToast(`Welcome to the lobby, ${player.name}!`, 'success');
+        render();
+      } catch (error) {
+        console.error('Join failed:', error);
+        showToast('Failed to join lobby', 'error');
+      }
+    }
+
+    async function leaveLobby() {
+      if (!currentPlayer) return;
+
+      try {
+        const res = await fetch(`${API_BASE}/api/players/${currentPlayer.id}`, {
+          method: 'DELETE',
+        });
+
+        if (!res.ok) throw new Error('Failed to leave');
+
+        currentPlayer = null;
+        localStorage.removeItem('currentPlayer');
+        showToast('You left the lobby', 'success');
+        render();
+      } catch (error) {
+        console.error('Leave failed:', error);
+        showToast('Failed to leave lobby', 'error');
+      }
+    }
+
+    async function loadPlayers() {
+      try {
+        const res = await fetch(`${API_BASE}/api/players`);
+        const data = await res.json();
+        players = data;
+        render();
+      } catch (error) {
+        console.error('Failed to load players:', error);
+      }
+    }
+
+    function showToast(message, type = 'info') {
+      const toast = document.createElement('div');
+      toast.className = `toast ${type}`;
+      toast.textContent = message;
+      document.body.appendChild(toast);
+      setTimeout(() => toast.remove(), 3000);
+    }
+
+    function render() {
+      const app = document.getElementById('app');
+      
+      if (!currentPlayer) {
+        app.innerHTML = `
+          <div class="card">
+            <div>
+              <h1>GitHub Game</h1>
+              <p class="subtitle">Join the lobby to get started</p>
+            </div>
+
+            <form onsubmit="handleJoinForm(event)">
+              <div class="form-group">
+                <label for="name">Player Name</label>
+                <input id="name" type="text" placeholder="Enter your name" required />
+              </div>
+              <button type="submit">Join Lobby</button>
+            </form>
+
+            <div class="players-section">
+              <h3>Players in Lobby (${players.length})</h3>
+              ${players.length === 0 
+                ? '<p class="empty-state">No players yet</p>'
+                : `<ul class="players-list">
+                    ${players.map(p => `
+                      <li>
+                        <span>${p.name}</span>
+                        <span class="time">${new Date(p.joinedAt).toLocaleTimeString()}</span>
+                      </li>
+                    `).join('')}
+                  </ul>`
+              }
+            </div>
+          </div>
+        `;
+      } else {
+        app.innerHTML = `
+          <div class="lobby-view">
+            <div class="lobby-header">
+              <div>
+                <h1>GitHub Game Lobby <span class="connection-status ${isConnected ? 'connected' : ''}"></span></h1>
+                <p class="subtitle">Welcome, <strong>${currentPlayer.name}</strong>!</p>
+              </div>
+              <button class="leave-btn" onclick="handleLeave()">Leave</button>
+            </div>
+
+            <div class="players-section">
+              <h3>Players (${players.length})</h3>
+              ${players.length === 0
+                ? '<p class="empty-state">Waiting for players...</p>'
+                : `<div class="players-grid">
+                    ${players.map(p => `
+                      <div class="player-card">
+                        <div class="player-info">
+                          <p>${p.name}</p>
+                          <p>${new Date(p.joinedAt).toLocaleTimeString()}</p>
+                        </div>
+                        ${p.id === currentPlayer.id ? '<span class="you-badge">You</span>' : ''}
+                      </div>
+                    `).join('')}
+                  </div>`
+              }
+            </div>
+          </div>
+        `;
+      }
+    }
+
+    function handleJoinForm(e) {
+      e.preventDefault();
+      const name = document.getElementById('name').value;
+      joinLobby(name);
+    }
+
+    function handleLeave() {
+      leaveLobby();
+    }
+
+    // Initialize
+    initializeFromStorage();
+    connectWebSocket();
+    loadPlayers();
+    render();
+  </script>
+</body>
+</html>
