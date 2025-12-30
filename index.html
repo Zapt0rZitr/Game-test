@@ -1,213 +1,504 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>GitHub Multiplayer Cube Game</title>
-<style>
-    body { margin:0; overflow:hidden; font-family: sans-serif; }
-    canvas { display:block; }
-    #ui { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; background:#111; color:white; }
-    .card { background:#1f1f1f; padding:2rem; border-radius:8px; width:300px; }
-    input, button { width:100%; margin-top:0.75rem; padding:0.6rem; font-size:1rem; }
-    button { background:#2563eb; border:none; color:white; cursor:pointer; }
-    button:hover { background:#1d4ed8; }
-    #overlay { position:absolute; top:10px; left:10px; color:white; z-index:10; display:none; }
-</style>
-<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GitHub Game Lobby</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      background: linear-gradient(135deg, #f5f5f5 0%, #e0e0e0 100%);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1rem;
+    }
+
+    body.dark {
+      background: linear-gradient(135deg, #1a1a1a 0%, #0d0d0d 100%);
+    }
+
+    .card {
+      background: white;
+      border-radius: 8px;
+      padding: 2rem;
+      max-width: 500px;
+      width: 100%;
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    }
+
+    body.dark .card {
+      background: #1f1f1f;
+      color: #e0e0e0;
+    }
+
+    h1 {
+      font-size: 1.875rem;
+      font-weight: bold;
+      margin-bottom: 0.5rem;
+    }
+
+    .subtitle {
+      color: #666;
+      margin-bottom: 2rem;
+      font-size: 0.95rem;
+    }
+
+    body.dark .subtitle {
+      color: #999;
+    }
+
+    form {
+      margin-bottom: 1.5rem;
+    }
+
+    .form-group {
+      margin-bottom: 1rem;
+    }
+
+    label {
+      display: block;
+      font-size: 0.875rem;
+      font-weight: 500;
+      margin-bottom: 0.5rem;
+    }
+
+    input[type="text"] {
+      width: 100%;
+      padding: 0.5rem;
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      font-size: 1rem;
+      font-family: inherit;
+    }
+
+    body.dark input[type="text"] {
+      background: #2a2a2a;
+      border-color: #444;
+      color: #e0e0e0;
+    }
+
+    input[type="text"]:focus {
+      outline: none;
+      border-color: #2563eb;
+      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+    }
+
+    button {
+      width: 100%;
+      padding: 0.625rem;
+      background: #2563eb;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      font-size: 1rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+
+    button:hover:not(:disabled) {
+      background: #1d4ed8;
+    }
+
+    button:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+
+    body.dark button {
+      background: #3b82f6;
+    }
+
+    body.dark button:hover:not(:disabled) {
+      background: #2563eb;
+    }
+
+    .players-section {
+      background: #f9f9f9;
+      border-radius: 6px;
+      padding: 1.5rem;
+      margin-top: 2rem;
+    }
+
+    body.dark .players-section {
+      background: #2a2a2a;
+    }
+
+    .players-section h3 {
+      font-weight: 600;
+      margin-bottom: 1rem;
+      font-size: 1.1rem;
+    }
+
+    .players-list {
+      list-style: none;
+    }
+
+    .players-list li {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.9rem;
+      padding: 0.5rem 0;
+      border-bottom: 1px solid #eee;
+    }
+
+    body.dark .players-list li {
+      border-bottom-color: #444;
+    }
+
+    .players-list li:last-child {
+      border-bottom: none;
+    }
+
+    .time {
+      font-size: 0.8rem;
+      color: #999;
+    }
+
+    body.dark .time {
+      color: #666;
+    }
+
+    .empty-state {
+      color: #999;
+      font-size: 0.9rem;
+    }
+
+    body.dark .empty-state {
+      color: #666;
+    }
+
+    .lobby-view {
+      max-width: 800px;
+    }
+
+    .lobby-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 2rem;
+    }
+
+    .lobby-header h1 {
+      margin: 0;
+    }
+
+    .leave-btn {
+      background: #ef4444;
+      padding: 0.5rem 1rem;
+      width: auto;
+    }
+
+    .leave-btn:hover {
+      background: #dc2626;
+    }
+
+    .players-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+      gap: 1rem;
+      margin-top: 1rem;
+    }
+
+    .player-card {
+      background: white;
+      border: 1px solid #e5e5e5;
+      border-radius: 6px;
+      padding: 1rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    body.dark .player-card {
+      background: #1f1f1f;
+      border-color: #333;
+    }
+
+    .player-info p:first-child {
+      font-weight: 500;
+      margin-bottom: 0.25rem;
+    }
+
+    .player-info p:last-child {
+      font-size: 0.8rem;
+      color: #999;
+    }
+
+    body.dark .player-info p:last-child {
+      color: #666;
+    }
+
+    .you-badge {
+      background: #2563eb;
+      color: white;
+      font-size: 0.75rem;
+      padding: 0.25rem 0.5rem;
+      border-radius: 4px;
+    }
+
+    .toast {
+      position: fixed;
+      top: 1rem;
+      right: 1rem;
+      background: #333;
+      color: white;
+      padding: 1rem;
+      border-radius: 6px;
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2);
+      animation: slideIn 0.3s ease-out;
+      z-index: 1000;
+    }
+
+    @keyframes slideIn {
+      from {
+        transform: translateX(400px);
+        opacity: 0;
+      }
+      to {
+        transform: translateX(0);
+        opacity: 1;
+      }
+    }
+
+    .toast.error {
+      background: #dc2626;
+    }
+
+    .toast.success {
+      background: #059669;
+    }
+
+    .connection-status {
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #ef4444;
+      margin-left: 0.5rem;
+    }
+
+    .connection-status.connected {
+      background: #10b981;
+    }
+  </style>
 </head>
 <body>
-<div id="ui"></div>
-<div id="overlay">Click to lock mouse | WASD to move | Space to jump</div>
+  <div id="app"></div>
 
-<script>
-const API_BASE = 'https://node-weaver--Zapt0rWut.replit.app';
+  <script>
+    const API_BASE = 'https://node-weaver--Zapt0rWut.replit.app'; // Change this to your Replit backend URL
 
-let currentPlayer = null;
-let ws = null;
-let players = {};
-let otherPlayers = {};
-let nameTags = {};
-let scene, camera, renderer;
-let localCube;
-let yaw=0, pitch=0, euler=new THREE.Euler(0,0,0,'YXZ');
-let moveForward=false, moveBackward=false, moveLeft=false, moveRight=false, jump=false;
-let velocity=new THREE.Vector3(), onGround=false;
-const moveSpeed=0.1, gravity=-0.05, jumpHeight=0.7;
 
-/* ========== UI / Lobby ========== */
-function renderUI(){
-    const ui = document.getElementById("ui");
-    if(!currentPlayer){
-        ui.innerHTML = `
-            <div class="card">
-                <h2>Enter Username</h2>
-                <input id="username" placeholder="Username" />
-                <button onclick="joinGame()">Join</button>
-            </div>
-        `;
-    } else {
-        ui.style.display="none";
-        document.getElementById("overlay").style.display="block";
-        initGame();
+    let currentPlayer = null;
+    let players = [];
+    let ws = null;
+    let isConnected = false;
+
+    function initializeFromStorage() {
+      const stored = localStorage.getItem('currentPlayer');
+      if (stored) {
+        try {
+          currentPlayer = JSON.parse(stored);
+        } catch (e) {
+          localStorage.removeItem('currentPlayer');
+        }
+      }
     }
-}
 
-async function joinGame(){
-    const name = document.getElementById("username").value.trim();
-    if(!name) return;
-    try {
+    function connectWebSocket() {
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const url = `${protocol}//${API_BASE.replace(/^https?:\/\//, '')}/ws`;
+      
+      ws = new WebSocket(url);
+
+      ws.onopen = () => {
+        isConnected = true;
+        console.log('Connected to lobby');
+        render();
+      };
+
+      ws.onmessage = (event) => {
+        const message = JSON.parse(event.data);
+
+        if (message.type === 'lobbyState') {
+          players = message.payload;
+        } else if (message.type === 'playerJoined') {
+          players.push(message.payload);
+        } else if (message.type === 'playerLeft') {
+          players = players.filter((p) => p.id !== message.payload.id);
+        }
+        render();
+      };
+
+      ws.onerror = () => {
+        isConnected = false;
+        console.error('WebSocket error');
+        render();
+      };
+
+      ws.onclose = () => {
+        isConnected = false;
+      };
+    }
+
+    async function joinLobby(name) {
+      try {
         const res = await fetch(`${API_BASE}/api/players`, {
-            method:'POST',
-            headers:{'Content-Type':'application/json'},
-            body: JSON.stringify({name})
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: name.trim() }),
         });
-        if(res.status===409){ alert("Name taken"); return; }
-        if(!res.ok) throw new Error("Join failed");
-        currentPlayer = await res.json();
-        renderUI();
-    } catch(e){ console.error(e); alert("Failed to join"); }
-}
 
-/* ========== Game Initialization ========== */
-function initGame(){
-    scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x87ceeb);
+        if (res.status === 409) {
+          showToast('Name already taken', 'error');
+          return;
+        }
 
-    camera = new THREE.PerspectiveCamera(75, innerWidth/innerHeight, 0.1, 1000);
-    camera.position.set(0,1.6,0);
+        if (!res.ok) throw new Error('Failed to join');
 
-    renderer = new THREE.WebGLRenderer();
-    renderer.setSize(innerWidth, innerHeight);
-    document.body.appendChild(renderer.domElement);
-
-    const floor = new THREE.Mesh(new THREE.PlaneGeometry(100,100), new THREE.MeshBasicMaterial({color:0x808080}));
-    floor.rotation.x=-Math.PI/2;
-    scene.add(floor);
-
-    localCube = new THREE.Mesh(new THREE.BoxGeometry(1,1,1), new THREE.MeshBasicMaterial({color:currentPlayer.color}));
-    scene.add(localCube);
-    nameTags[currentPlayer.id] = createNameTag(currentPlayer.name);
-    scene.add(nameTags[currentPlayer.id]);
-
-    connectWS();
-
-    document.body.addEventListener("click",()=>document.body.requestPointerLock());
-    document.addEventListener("mousemove",onMouseMove);
-    document.addEventListener("keydown",onKeyDown);
-    document.addEventListener("keyup",onKeyUp);
-
-    animate();
-}
-
-/* ========== Controls ========== */
-function onMouseMove(e){
-    if(document.pointerLockElement!==document.body) return;
-    yaw-=e.movementX*0.002;
-    pitch-=e.movementY*0.002;
-    pitch=Math.max(-Math.PI/2, Math.min(Math.PI/2,pitch));
-    euler.set(pitch,yaw,0);
-    camera.quaternion.setFromEuler(euler);
-}
-
-function onKeyDown(e){
-    if(e.key==='w') moveForward=true;
-    if(e.key==='s') moveBackward=true;
-    if(e.key==='a') moveLeft=true;
-    if(e.key==='d') moveRight=true;
-    if(e.key===' ') jump=true;
-}
-
-function onKeyUp(e){
-    if(e.key==='w') moveForward=false;
-    if(e.key==='s') moveBackward=false;
-    if(e.key==='a') moveLeft=false;
-    if(e.key==='d') moveRight=false;
-    if(e.key===' ') jump=false;
-}
-
-/* ========== Name Tags ========== */
-function createNameTag(text){
-    const canvas = document.createElement("canvas");
-    canvas.width=256; canvas.height=64;
-    const ctx = canvas.getContext("2d");
-    ctx.fillStyle="white"; ctx.font="28px monospace"; ctx.textAlign="center";
-    ctx.fillText(text,128,40);
-    const tex = new THREE.CanvasTexture(canvas);
-    const sprite = new THREE.Sprite(new THREE.SpriteMaterial({map:tex}));
-    sprite.scale.set(2,0.5,1);
-    return sprite;
-}
-
-function updateNameTags(){
-    for(let id in nameTags){
-        const target = (id===currentPlayer.id)?localCube:otherPlayers[id];
-        if(target) nameTags[id].position.set(target.position.x,target.position.y+1.2,target.position.z);
+        const player = await res.json();
+        currentPlayer = player;
+        localStorage.setItem('currentPlayer', JSON.stringify(player));
+        showToast(`Welcome to the lobby, ${player.name}!`, 'success');
+        render();
+      } catch (error) {
+        console.error('Join failed:', error);
+        showToast('Failed to join lobby', 'error');
+      }
     }
-}
 
-/* ========== Multiplayer WS ========== */
-function connectWS(){
-    const protocol = location.protocol==='https:'?'wss':'ws';
-    ws = new WebSocket(`${protocol}://${API_BASE.replace(/^https?:\/\//,'')}/ws`);
-    ws.onopen = ()=>{
-        ws.send(JSON.stringify({type:'joinGame', id:currentPlayer.id, name:currentPlayer.name, color:currentPlayer.color}));
-    };
-    ws.onmessage = e=>{
-        const msg=JSON.parse(e.data);
-        if(msg.type==='gameState'){
-            msg.players.forEach(p=>{
-                if(p.id!==currentPlayer.id && !otherPlayers[p.id]){
-                    const cube = new THREE.Mesh(new THREE.BoxGeometry(1,1,1), new THREE.MeshBasicMaterial({color:p.color}));
-                    otherPlayers[p.id]=cube; scene.add(cube);
-                    nameTags[p.id] = createNameTag(p.name); scene.add(nameTags[p.id]);
-                }
-                if(otherPlayers[p.id]){
-                    otherPlayers[p.id].position.set(p.position.x,p.position.y,p.position.z);
-                    otherPlayers[p.id].rotation.set(p.rotation.pitch,p.rotation.yaw,0);
-                }
-            });
-        }
-        if(msg.type==='playerLeft'){
-            const id = msg.id;
-            if(otherPlayers[id]) { scene.remove(otherPlayers[id]); scene.remove(nameTags[id]); delete otherPlayers[id]; delete nameTags[id]; }
-        }
-    };
-}
+    async function leaveLobby() {
+      if (!currentPlayer) return;
 
-function sendUpdate(){
-    if(!ws||ws.readyState!==1) return;
-    ws.send(JSON.stringify({type:'update', id:currentPlayer.id, position:camera.position, rotation:{yaw,pitch}}));
-}
+      try {
+        const res = await fetch(`${API_BASE}/api/players/${currentPlayer.id}`, {
+          method: 'DELETE',
+        });
 
-/* ========== Movement ========== */
-function updateMovement(){
-    const dir = new THREE.Vector3();
-    const forward = new THREE.Vector3(); camera.getWorldDirection(forward); forward.y=0; forward.normalize();
-    const right = new THREE.Vector3(); right.crossVectors(camera.up, forward); right.normalize();
-    if(moveForward) dir.addScaledVector(forward, moveSpeed);
-    if(moveBackward) dir.addScaledVector(forward, -moveSpeed);
-    if(moveLeft) dir.addScaledVector(right, -moveSpeed);
-    if(moveRight) dir.addScaledVector(right, moveSpeed);
-    camera.position.add(dir);
-    localCube.position.copy(camera.position);
-    if(jump && onGround){ velocity.y=jumpHeight; onGround=false; }
-    velocity.y+=gravity; camera.position.y+=velocity.y;
-    if(camera.position.y<=1){ camera.position.y=1; velocity.y=0; onGround=true; }
-}
+        if (!res.ok) throw new Error('Failed to leave');
 
-/* ========== Loop ========== */
-function animate(){
-    requestAnimationFrame(animate);
-    updateMovement();
-    updateNameTags();
-    sendUpdate();
-    renderer.render(scene,camera);
-}
+        currentPlayer = null;
+        localStorage.removeItem('currentPlayer');
+        showToast('You left the lobby', 'success');
+        render();
+      } catch (error) {
+        console.error('Leave failed:', error);
+        showToast('Failed to leave lobby', 'error');
+      }
+    }
 
-/* ========== Start ========== */
-renderUI();
-window.addEventListener("beforeunload",()=>ws?.close());
-</script>
+    async function loadPlayers() {
+      try {
+        const res = await fetch(`${API_BASE}/api/players`);
+        const data = await res.json();
+        players = data;
+        render();
+      } catch (error) {
+        console.error('Failed to load players:', error);
+      }
+    }
+
+    function showToast(message, type = 'info') {
+      const toast = document.createElement('div');
+      toast.className = `toast ${type}`;
+      toast.textContent = message;
+      document.body.appendChild(toast);
+      setTimeout(() => toast.remove(), 3000);
+    }
+
+    function render() {
+      const app = document.getElementById('app');
+      
+      if (!currentPlayer) {
+        app.innerHTML = `
+          <div class="card">
+            <div>
+              <h1>GitHub Game</h1>
+              <p class="subtitle">Join the lobby to get started</p>
+            </div>
+
+            <form onsubmit="handleJoinForm(event)">
+              <div class="form-group">
+                <label for="name">Player Name</label>
+                <input id="name" type="text" placeholder="Enter your name" required />
+              </div>
+              <button type="submit">Join Lobby</button>
+            </form>
+
+            <div class="players-section">
+              <h3>Players in Lobby (${players.length})</h3>
+              ${players.length === 0 
+                ? '<p class="empty-state">No players yet</p>'
+                : `<ul class="players-list">
+                    ${players.map(p => `
+                      <li>
+                        <span>${p.name}</span>
+                        <span class="time">${new Date(p.joinedAt).toLocaleTimeString()}</span>
+                      </li>
+                    `).join('')}
+                  </ul>`
+              }
+            </div>
+          </div>
+        `;
+      } else {
+        app.innerHTML = `
+          <div class="lobby-view">
+            <div class="lobby-header">
+              <div>
+                <h1>GitHub Game Lobby <span class="connection-status ${isConnected ? 'connected' : ''}"></span></h1>
+                <p class="subtitle">Welcome, <strong>${currentPlayer.name}</strong>!</p>
+              </div>
+              <button class="leave-btn" onclick="handleLeave()">Leave</button>
+            </div>
+
+            <div class="players-section">
+              <h3>Players (${players.length})</h3>
+              ${players.length === 0
+                ? '<p class="empty-state">Waiting for players...</p>'
+                : `<div class="players-grid">
+                    ${players.map(p => `
+                      <div class="player-card">
+                        <div class="player-info">
+                          <p>${p.name}</p>
+                          <p>${new Date(p.joinedAt).toLocaleTimeString()}</p>
+                        </div>
+                        ${p.id === currentPlayer.id ? '<span class="you-badge">You</span>' : ''}
+                      </div>
+                    `).join('')}
+                  </div>`
+              }
+            </div>
+          </div>
+        `;
+      }
+    }
+
+    function handleJoinForm(e) {
+      e.preventDefault();
+      const name = document.getElementById('name').value;
+      joinLobby(name);
+    }
+
+    function handleLeave() {
+      leaveLobby();
+    }
+
+    // Initialize
+    initializeFromStorage();
+    connectWebSocket();
+    loadPlayers();
+    render();
+  </script>
 </body>
 </html>
