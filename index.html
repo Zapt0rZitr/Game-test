@@ -406,7 +406,7 @@ function initThree() {
   playerMesh.add(makeNameSprite(currentPlayer.name));
 
   // Camera & controls
-  controls = new PointerLockControls(camera, document.body);
+  controls = new THREE.PointerLockControls(camera, document.body);
   camera.position.y = 1.6;
   playerMesh.add(camera);
 
