@@ -2,291 +2,175 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>GitHub Multiplayer Game</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
-<!-- THREE.JS -->
-<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
-
+<title>GitHub Multiplayer Cube Game</title>
 <style>
-html, body {
-  margin: 0;
-  padding: 0;
-  overflow: hidden;
-  font-family: system-ui, sans-serif;
-  background: #111;
-}
-
-#ui {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.card {
-  background: #1f1f1f;
-  color: white;
-  padding: 2rem;
-  border-radius: 8px;
-  width: 300px;
-}
-
-input, button {
-  width: 100%;
-  margin-top: 0.75rem;
-  padding: 0.6rem;
-  font-size: 1rem;
-}
-
-button {
-  background: #2563eb;
-  color: white;
-  border: none;
-  cursor: pointer;
-}
-
-button:hover {
-  background: #1d4ed8;
-}
-
-#overlay {
-  position: absolute;
-  top: 10px;
-  left: 10px;
-  color: white;
-  z-index: 10;
-}
-canvas {
-  display: block;
-}
+    body { margin: 0; overflow: hidden; }
+    canvas { display: block; }
+    #waiting-popup {
+        position: absolute;
+        top: 10px;
+        left: 50%;
+        transform: translateX(-50%);
+        color: red;
+        font-size: 20px;
+        font-weight: bold;
+        display: none;
+        z-index: 10;
+    }
 </style>
+<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
 </head>
-
 <body>
-
-<div id="ui"></div>
-<div id="overlay" style="display:none;">
-  Click to lock mouse<br>WASD to move
-</div>
+<div id="waiting-popup">Waiting for an available slot...</div>
 
 <script>
-/* ================= CONFIG ================= */
-const API_BASE = "https://node-weaver--Zapt0rWut.replit.app";
+const API_BASE = 'https://node-weaver--Zapt0rWut.replit.app'; // your backend
 
-/* ================= STATE ================= */
-let currentPlayer = null;
+let scene, camera, renderer, playerCube;
+let localPlayer = { id: Math.random().toString(36).substr(2,9), name: "You", color: Math.random() * 0xffffff };
+let players = {};
+let otherPlayers = {};
+let nameTags = {};
+let yaw = 0, pitch = 0, euler = new THREE.Euler(0,0,0,'YXZ');
+let moveForward=false, moveBackward=false, moveLeft=false, moveRight=false, jump=false;
+let velocity = new THREE.Vector3(), onGround = false;
+const moveSpeed = 0.1, gravity = -0.05, jumpHeight = 0.7;
+
 let ws;
 
-let scene, camera, renderer;
-let localPlayer;
-let remotePlayers = {};
-let keys = {};
-let yaw = 0, pitch = 0;
+function init() {
+    scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x87ceeb);
 
-/* ================= UI ================= */
-function renderUI() {
-  const ui = document.getElementById("ui");
+    camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
+    camera.position.set(0,1,0);
 
-  if (!currentPlayer) {
-    ui.innerHTML = `
-      <div class="card">
-        <h2>Join Game</h2>
-        <input id="name" placeholder="Username" />
-        <button onclick="join()">Join</button>
-      </div>
-    `;
-  } else {
-    ui.innerHTML = "";
-    document.getElementById("overlay").style.display = "block";
-    startGame();
-  }
+    renderer = new THREE.WebGLRenderer();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    document.body.appendChild(renderer.domElement);
+
+    const floor = new THREE.Mesh(new THREE.PlaneGeometry(100,100), new THREE.MeshBasicMaterial({color:0x808080}));
+    floor.rotation.x = -Math.PI/2;
+    scene.add(floor);
+
+    playerCube = new THREE.Mesh(new THREE.BoxGeometry(2,2,2), new THREE.MeshBasicMaterial({color: localPlayer.color}));
+    scene.add(playerCube);
+
+    nameTags[localPlayer.id] = createNameTag(localPlayer.name);
+    scene.add(nameTags[localPlayer.id]);
+
+    connectWS();
+
+    document.body.addEventListener("click",()=>document.body.requestPointerLock());
+    document.addEventListener("mousemove",onMouseMove);
+    document.addEventListener("keydown",onKeyDown);
+    document.addEventListener("keyup",onKeyUp);
+
+    animate();
 }
 
-async function join() {
-  const name = document.getElementById("name").value.trim();
-  if (!name) return;
-
-  const res = await fetch(API_BASE + "/api/players", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name })
-  });
-
-  if (!res.ok) {
-    alert("Name taken or error");
-    return;
-  }
-
-  currentPlayer = await res.json();
-  renderUI();
+function onMouseMove(e){
+    if(document.pointerLockElement !== document.body) return;
+    yaw -= e.movementX*0.002;
+    pitch -= e.movementY*0.002;
+    pitch = Math.max(-Math.PI/2, Math.min(Math.PI/2, pitch));
+    euler.set(pitch,yaw,0);
+    camera.quaternion.setFromEuler(euler);
 }
 
-/* ================= GAME ================= */
-function startGame() {
-  scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x87ceeb);
-
-  camera = new THREE.PerspectiveCamera(75, innerWidth / innerHeight, 0.1, 1000);
-  camera.position.y = 1.6;
-
-  renderer = new THREE.WebGLRenderer();
-  renderer.setSize(innerWidth, innerHeight);
-  document.body.appendChild(renderer.domElement);
-
-  /* Lights */
-  scene.add(new THREE.HemisphereLight(0xffffff, 0x444444));
-
-  /* Ground */
-  const ground = new THREE.Mesh(
-    new THREE.PlaneGeometry(200, 200),
-    new THREE.MeshStandardMaterial({ color: 0x228b22 })
-  );
-  ground.rotation.x = -Math.PI / 2;
-  scene.add(ground);
-
-  localPlayer = createPlayerMesh(currentPlayer);
-  scene.add(localPlayer);
-
-  connectWS();
-
-  document.body.addEventListener("click", () => {
-    renderer.domElement.requestPointerLock();
-  });
-
-  document.addEventListener("mousemove", mouseMove);
-  document.addEventListener("keydown", e => keys[e.code] = true);
-  document.addEventListener("keyup", e => keys[e.code] = false);
-
-  animate();
+function onKeyDown(e){
+    if(e.key==='w') moveForward=true;
+    if(e.key==='s') moveBackward=true;
+    if(e.key==='a') moveLeft=true;
+    if(e.key==='d') moveRight=true;
+    if(e.key===' ') jump=true;
 }
 
-/* ================= PLAYER ================= */
-function createPlayerMesh(player) {
-  const group = new THREE.Group();
-
-  const cube = new THREE.Mesh(
-    new THREE.BoxGeometry(1, 1, 1),
-    new THREE.MeshStandardMaterial({ color: player.color || randomColor() })
-  );
-  cube.position.y = 0.5;
-  group.add(cube);
-
-  const label = createLabel(player.name);
-  label.position.y = 1.6;
-  group.add(label);
-
-  return group;
+function onKeyUp(e){
+    if(e.key==='w') moveForward=false;
+    if(e.key==='s') moveBackward=false;
+    if(e.key==='a') moveLeft=false;
+    if(e.key==='d') moveRight=false;
+    if(e.key===' ') jump=false;
 }
 
-function createLabel(text) {
-  const canvas = document.createElement("canvas");
-  canvas.width = 256;
-  canvas.height = 64;
-  const ctx = canvas.getContext("2d");
-
-  ctx.fillStyle = "white";
-  ctx.font = "28px Arial";
-  ctx.textAlign = "center";
-  ctx.fillText(text, 128, 42);
-
-  const tex = new THREE.CanvasTexture(canvas);
-  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex }));
-  sprite.scale.set(2, 0.5, 1);
-  return sprite;
+function createNameTag(text){
+    const canvas=document.createElement('canvas');
+    canvas.width=256; canvas.height=64;
+    const ctx=canvas.getContext('2d');
+    ctx.fillStyle='white'; ctx.font='28px monospace'; ctx.textAlign='center';
+    ctx.fillText(text,128,40);
+    const tex=new THREE.CanvasTexture(canvas);
+    const sprite=new THREE.Sprite(new THREE.SpriteMaterial({map:tex}));
+    sprite.scale.set(2,1,1);
+    return sprite;
 }
 
-/* ================= CONTROLS ================= */
-function mouseMove(e) {
-  if (document.pointerLockElement !== renderer.domElement) return;
-
-  yaw -= e.movementX * 0.002;
-  pitch -= e.movementY * 0.002;
-  pitch = Math.max(-Math.PI/2, Math.min(Math.PI/2, pitch));
+function updateLocalMovement(){
+    const direction = new THREE.Vector3();
+    const forward = new THREE.Vector3(); camera.getWorldDirection(forward); forward.y=0; forward.normalize();
+    const right = new THREE.Vector3(); right.crossVectors(camera.up, forward); right.normalize();
+    if(moveForward) direction.addScaledVector(forward, moveSpeed);
+    if(moveBackward) direction.addScaledVector(forward, -moveSpeed);
+    if(moveLeft) direction.addScaledVector(right, moveSpeed);
+    if(moveRight) direction.addScaledVector(right, -moveSpeed);
+    camera.position.add(direction);
+    playerCube.position.copy(camera.position);
+    if(jump && onGround){ velocity.y = jumpHeight; onGround=false; }
+    velocity.y += gravity; camera.position.y += velocity.y;
+    if(camera.position.y <=1){ camera.position.y=1; velocity.y=0; onGround=true; }
 }
 
-/* ================= LOOP ================= */
-function animate() {
-  requestAnimationFrame(animate);
-
-  const speed = 0.06;
-  const forward = new THREE.Vector3(Math.sin(yaw), 0, Math.cos(yaw));
-  const right = new THREE.Vector3(forward.z, 0, -forward.x);
-
-  if (keys["KeyW"]) localPlayer.position.add(forward.clone().multiplyScalar(speed));
-  if (keys["KeyS"]) localPlayer.position.add(forward.clone().multiplyScalar(-speed));
-  if (keys["KeyA"]) localPlayer.position.add(right.clone().multiplyScalar(-speed));
-  if (keys["KeyD"]) localPlayer.position.add(right.clone().multiplyScalar(speed));
-
-  camera.rotation.set(pitch, yaw, 0);
-  camera.position.copy(localPlayer.position).add(new THREE.Vector3(0, 1.6, 0));
-
-  sendUpdate();
-  renderer.render(scene, camera);
-}
-
-/* ================= MULTIPLAYER ================= */
-function connectWS() {
-  const protocol = location.protocol === "https:" ? "wss" : "ws";
-  ws = new WebSocket(`${protocol}://${API_BASE.replace(/^https?:\/\//,"")}/ws`);
-
-  ws.onopen = () => {
-    ws.send(JSON.stringify({
-      type: "joinGame",
-      id: currentPlayer.id
-    }));
-  };
-
-  ws.onmessage = e => {
-    const msg = JSON.parse(e.data);
-
-    if (msg.type === "gameState") {
-      msg.players.forEach(p => {
-        if (p.id !== currentPlayer.id) addRemote(p);
-      });
+function updateNameTags(){
+    for(let id in nameTags){
+        const target = (id===localPlayer.id)?playerCube:otherPlayers[id];
+        if(target) nameTags[id].position.set(target.position.x, target.position.y+1.5, target.position.z);
     }
-
-    if (msg.type === "playerUpdate") {
-      if (msg.player.id !== currentPlayer.id) updateRemote(msg.player);
-    }
-
-    if (msg.type === "playerLeft") {
-      scene.remove(remotePlayers[msg.id]);
-      delete remotePlayers[msg.id];
-    }
-  };
 }
 
-function addRemote(p) {
-  const mesh = createPlayerMesh(p);
-  remotePlayers[p.id] = mesh;
-  scene.add(mesh);
+function animate(){
+    requestAnimationFrame(animate);
+    updateLocalMovement();
+    updateNameTags();
+    sendUpdate();
+    renderer.render(scene,camera);
 }
 
-function updateRemote(p) {
-  const m = remotePlayers[p.id];
-  if (!m) return;
-  m.position.set(p.position.x, p.position.y, p.position.z);
-  m.rotation.y = p.rotation.y;
+function connectWS(){
+    const protocol = location.protocol==='https:'?'wss':'ws';
+    ws = new WebSocket(`${protocol}://${API_BASE.replace(/^https?:\/\//,'')}/ws`);
+    ws.onopen = ()=> ws.send(JSON.stringify({type:'joinGame', id: localPlayer.id, name: localPlayer.name, color: localPlayer.color}));
+    ws.onmessage = e => {
+        const msg=JSON.parse(e.data);
+        if(msg.type==='gameState'){
+            msg.players.forEach(p=>{
+                if(p.id!==localPlayer.id && !otherPlayers[p.id]){
+                    const cube = new THREE.Mesh(new THREE.BoxGeometry(2,2,2), new THREE.MeshBasicMaterial({color:p.color}));
+                    otherPlayers[p.id]=cube; scene.add(cube);
+                    nameTags[p.id]=createNameTag(p.name); scene.add(nameTags[p.id]);
+                }
+                if(otherPlayers[p.id]){
+                    otherPlayers[p.id].position.set(p.position.x,p.position.y,p.position.z);
+                    const e = new THREE.Euler(p.rotation.pitch,p.rotation.yaw,0,'YXZ');
+                    otherPlayers[p.id].rotation.set(e.x,e.y,e.z);
+                }
+            });
+        }
+        if(msg.type==='playerLeft'){
+            const id=msg.id;
+            if(otherPlayers[id]){ scene.remove(otherPlayers[id]); scene.remove(nameTags[id]); delete otherPlayers[id]; delete nameTags[id]; }
+        }
+    };
 }
 
-function sendUpdate() {
-  if (!ws || ws.readyState !== 1) return;
-  ws.send(JSON.stringify({
-    type: "update",
-    position: localPlayer.position,
-    rotation: { y: yaw }
-  }));
+function sendUpdate(){
+    if(!ws||ws.readyState!==1) return;
+    ws.send(JSON.stringify({type:'update', id:localPlayer.id, position:camera.position, rotation:{yaw,pitch}}));
 }
 
-/* ================= UTIL ================= */
-function randomColor() {
-  return new THREE.Color(`hsl(${Math.random()*360},70%,50%)`);
-}
-
-renderUI();
+window.addEventListener("beforeunload", ()=>ws?.close());
+init();
 </script>
-
 </body>
 </html>
