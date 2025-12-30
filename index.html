@@ -294,240 +294,211 @@
 </head>
 <body>
   <div id="app"></div>
-<script src="https://cdn.jsdelivr.net/npm/three@0.158/build/three.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.158/examples/js/controls/PointerLockControls.js"></script>
-
 
   <script>
- 
-const API_BASE = 'https://node-weaver--Zapt0rWut.replit.app';
+    const API_BASE = 'https://node-weaver--Zapt0rWut.replit.app'; // Change this to your Replit backend URL
 
-let currentPlayer = null;
-let players = {};
-let ws = null;
 
-// ======================
-// THREE.JS STATE
-// ======================
-let scene, camera, renderer, controls;
-let playerMesh;
-let move = { forward: false, backward: false, left: false, right: false };
-let velocity = new THREE.Vector3();
-let lastSent = 0;
+    let currentPlayer = null;
+    let players = [];
+    let ws = null;
+    let isConnected = false;
 
-// ======================
-// INIT
-// ======================
-initFromStorage();
-connectWebSocket();
-renderLobby();
-
-// ======================
-// LOBBY
-// ======================
-async function joinLobby(name) {
-  const res = await fetch(`${API_BASE}/api/players`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name })
-  });
-
-  if (!res.ok) {
-    alert('Name already taken');
-    return;
-  }
-
-  currentPlayer = await res.json();
-  localStorage.setItem('currentPlayer', JSON.stringify(currentPlayer));
-  renderGame();
-}
-
-function renderLobby() {
-  document.getElementById('app').innerHTML = `
-    <div class="card">
-      <h1>GitHub Game</h1>
-      <form onsubmit="event.preventDefault(); joinLobby(name.value)">
-        <input id="name" placeholder="Name" required />
-        <button>Join Game</button>
-      </form>
-    </div>
-  `;
-}
-
-window.joinLobby = joinLobby;
-
-// ======================
-// GAME
-// ======================
-function renderGame() {
-  document.getElementById('app').innerHTML = '';
-  initThree();
-  animate();
-}
-
-function initThree() {
-  scene = new THREE.Scene();
-  scene.background = new THREE.Color(0xaaaaaa);
-
-  camera = new THREE.PerspectiveCamera(
-    75,
-    window.innerWidth / window.innerHeight,
-    0.1,
-    1000
-  );
-
-  renderer = new THREE.WebGLRenderer({ antialias: true });
-  renderer.setSize(window.innerWidth, window.innerHeight);
-  document.body.appendChild(renderer.domElement);
-
-  // Floor
-  const floor = new THREE.Mesh(
-    new THREE.PlaneGeometry(100, 100),
-    new THREE.MeshStandardMaterial({ color: 0x777777 })
-  );
-  floor.rotation.x = -Math.PI / 2;
-  scene.add(floor);
-
-  // Light
-  scene.add(new THREE.HemisphereLight(0xffffff, 0x444444));
-  const dir = new THREE.DirectionalLight(0xffffff);
-  dir.position.set(5, 10, 2);
-  scene.add(dir);
-
-  // Player cube
-  const color = new THREE.Color().setHSL(Math.random(), 0.7, 0.5);
-  playerMesh = new THREE.Mesh(
-    new THREE.BoxGeometry(1, 1, 1),
-    new THREE.MeshStandardMaterial({ color })
-  );
-  scene.add(playerMesh);
-
-  // Name label
-  playerMesh.add(makeNameSprite(currentPlayer.name));
-
-  // Camera & controls
-  controls = new THREE.PointerLockControls(camera, document.body);
-  camera.position.y = 1.6;
-  playerMesh.add(camera);
-
-  document.body.addEventListener('click', () => controls.lock());
-
-  // Input
-  document.addEventListener('keydown', e => setMove(e.code, true));
-  document.addEventListener('keyup', e => setMove(e.code, false));
-}
-
-function setMove(code, value) {
-  if (code === 'KeyW') move.forward = value;
-  if (code === 'KeyS') move.backward = value;
-  if (code === 'KeyA') move.left = value;
-  if (code === 'KeyD') move.right = value;
-}
-
-// ======================
-// NETWORK
-// ======================
-function connectWebSocket() {
-  const protocol = location.protocol === 'https:' ? 'wss' : 'ws';
-  ws = new WebSocket(`${protocol}://${API_BASE.replace(/^https?:\/\//, '')}/ws`);
-
-  ws.onmessage = e => {
-    const msg = JSON.parse(e.data);
-
-    if (msg.type === 'state') {
-      for (const id in msg.players) {
-        if (id === currentPlayer?.id) continue;
-        updateRemotePlayer(id, msg.players[id]);
+    function initializeFromStorage() {
+      const stored = localStorage.getItem('currentPlayer');
+      if (stored) {
+        try {
+          currentPlayer = JSON.parse(stored);
+        } catch (e) {
+          localStorage.removeItem('currentPlayer');
+        }
       }
     }
 
-    if (msg.type === 'left') {
-      scene.remove(players[msg.id]);
-      delete players[msg.id];
+    function connectWebSocket() {
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const url = `${protocol}//${API_BASE.replace(/^https?:\/\//, '')}/ws`;
+      
+      ws = new WebSocket(url);
+
+      ws.onopen = () => {
+        isConnected = true;
+        console.log('Connected to lobby');
+        render();
+      };
+
+      ws.onmessage = (event) => {
+        const message = JSON.parse(event.data);
+
+        if (message.type === 'lobbyState') {
+          players = message.payload;
+        } else if (message.type === 'playerJoined') {
+          players.push(message.payload);
+        } else if (message.type === 'playerLeft') {
+          players = players.filter((p) => p.id !== message.payload.id);
+        }
+        render();
+      };
+
+      ws.onerror = () => {
+        isConnected = false;
+        console.error('WebSocket error');
+        render();
+      };
+
+      ws.onclose = () => {
+        isConnected = false;
+      };
     }
-  };
-}
 
-function sendState() {
-  if (!ws || ws.readyState !== 1) return;
+    async function joinLobby(name) {
+      try {
+        const res = await fetch(`${API_BASE}/api/players`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: name.trim() }),
+        });
 
-  ws.send(JSON.stringify({
-    type: 'update',
-    position: playerMesh.position,
-    rotation: playerMesh.rotation.y
-  }));
-}
+        if (res.status === 409) {
+          showToast('Name already taken', 'error');
+          return;
+        }
 
-function updateRemotePlayer(id, data) {
-  if (!players[id]) {
-    const mesh = new THREE.Mesh(
-      new THREE.BoxGeometry(1, 1, 1),
-      new THREE.MeshStandardMaterial({ color: 0x00ffcc })
-    );
-    mesh.add(makeNameSprite(data.name));
-    scene.add(mesh);
-    players[id] = mesh;
-  }
+        if (!res.ok) throw new Error('Failed to join');
 
-  players[id].position.set(
-    data.position.x,
-    data.position.y,
-    data.position.z
-  );
-  players[id].rotation.y = data.rotation;
-}
+        const player = await res.json();
+        currentPlayer = player;
+        localStorage.setItem('currentPlayer', JSON.stringify(player));
+        showToast(`Welcome to the lobby, ${player.name}!`, 'success');
+        render();
+      } catch (error) {
+        console.error('Join failed:', error);
+        showToast('Failed to join lobby', 'error');
+      }
+    }
 
-// ======================
-// LOOP
-// ======================
-function animate() {
-  requestAnimationFrame(animate);
+    async function leaveLobby() {
+      if (!currentPlayer) return;
 
-  const speed = 0.1;
-  velocity.set(0, 0, 0);
+      try {
+        const res = await fetch(`${API_BASE}/api/players/${currentPlayer.id}`, {
+          method: 'DELETE',
+        });
 
-  if (move.forward) velocity.z -= speed;
-  if (move.backward) velocity.z += speed;
-  if (move.left) velocity.x -= speed;
-  if (move.right) velocity.x += speed;
+        if (!res.ok) throw new Error('Failed to leave');
 
-  controls.moveRight(velocity.x);
-  controls.moveForward(velocity.z);
+        currentPlayer = null;
+        localStorage.removeItem('currentPlayer');
+        showToast('You left the lobby', 'success');
+        render();
+      } catch (error) {
+        console.error('Leave failed:', error);
+        showToast('Failed to leave lobby', 'error');
+      }
+    }
 
-  playerMesh.position.copy(controls.getObject().position);
+    async function loadPlayers() {
+      try {
+        const res = await fetch(`${API_BASE}/api/players`);
+        const data = await res.json();
+        players = data;
+        render();
+      } catch (error) {
+        console.error('Failed to load players:', error);
+      }
+    }
 
-  if (performance.now() - lastSent > 50) {
-    sendState();
-    lastSent = performance.now();
-  }
+    function showToast(message, type = 'info') {
+      const toast = document.createElement('div');
+      toast.className = `toast ${type}`;
+      toast.textContent = message;
+      document.body.appendChild(toast);
+      setTimeout(() => toast.remove(), 3000);
+    }
 
-  renderer.render(scene, camera);
-}
+    function render() {
+      const app = document.getElementById('app');
+      
+      if (!currentPlayer) {
+        app.innerHTML = `
+          <div class="card">
+            <div>
+              <h1>GitHub Game</h1>
+              <p class="subtitle">Join the lobby to get started</p>
+            </div>
 
-// ======================
-// UTILS
-// ======================
-function makeNameSprite(name) {
-  const canvas = document.createElement('canvas');
-  const ctx = canvas.getContext('2d');
-  ctx.font = '24px sans-serif';
-  ctx.fillStyle = 'white';
-  ctx.fillText(name, 10, 30);
+            <form onsubmit="handleJoinForm(event)">
+              <div class="form-group">
+                <label for="name">Player Name</label>
+                <input id="name" type="text" placeholder="Enter your name" required />
+              </div>
+              <button type="submit">Join Lobby</button>
+            </form>
 
-  const texture = new THREE.CanvasTexture(canvas);
-  const sprite = new THREE.Sprite(
-    new THREE.SpriteMaterial({ map: texture })
-  );
-  sprite.scale.set(2, 1, 1);
-  sprite.position.y = 1.2;
-  return sprite;
-}
+            <div class="players-section">
+              <h3>Players in Lobby (${players.length})</h3>
+              ${players.length === 0 
+                ? '<p class="empty-state">No players yet</p>'
+                : `<ul class="players-list">
+                    ${players.map(p => `
+                      <li>
+                        <span>${p.name}</span>
+                        <span class="time">${new Date(p.joinedAt).toLocaleTimeString()}</span>
+                      </li>
+                    `).join('')}
+                  </ul>`
+              }
+            </div>
+          </div>
+        `;
+      } else {
+        app.innerHTML = `
+          <div class="lobby-view">
+            <div class="lobby-header">
+              <div>
+                <h1>GitHub Game Lobby <span class="connection-status ${isConnected ? 'connected' : ''}"></span></h1>
+                <p class="subtitle">Welcome, <strong>${currentPlayer.name}</strong>!</p>
+              </div>
+              <button class="leave-btn" onclick="handleLeave()">Leave</button>
+            </div>
 
-function initFromStorage() {
-  const stored = localStorage.getItem('currentPlayer');
-  if (stored) currentPlayer = JSON.parse(stored);
-}
-</script>
+            <div class="players-section">
+              <h3>Players (${players.length})</h3>
+              ${players.length === 0
+                ? '<p class="empty-state">Waiting for players...</p>'
+                : `<div class="players-grid">
+                    ${players.map(p => `
+                      <div class="player-card">
+                        <div class="player-info">
+                          <p>${p.name}</p>
+                          <p>${new Date(p.joinedAt).toLocaleTimeString()}</p>
+                        </div>
+                        ${p.id === currentPlayer.id ? '<span class="you-badge">You</span>' : ''}
+                      </div>
+                    `).join('')}
+                  </div>`
+              }
+            </div>
+          </div>
+        `;
+      }
+    }
 
+    function handleJoinForm(e) {
+      e.preventDefault();
+      const name = document.getElementById('name').value;
+      joinLobby(name);
+    }
+
+    function handleLeave() {
+      leaveLobby();
+    }
+
+    // Initialize
+    initializeFromStorage();
+    connectWebSocket();
+    loadPlayers();
+    render();
+  </script>
 </body>
 </html>
