@@ -22,38 +22,39 @@
 <body class="bg-slate-950 text-white overflow-hidden">
     <div id="app" class="h-screen w-full flex flex-col"></div>
 
-    <script type="module">
-        import * as THREE from 'three';
-        import { initThreeJS } from './game.js'
+  <!-- Load game code -->
+  <script type="module" src="./game.js"></script>
 
-        // Set these to your Replit app's URL
-        const REPLIT_URL = window.location.host.includes('replit.dev') 
-            ? window.location.host 
-            : 'c0a57a38-5e07-47e2-832b-3893a6a45c9d-00-1onb29g72tmp2.picard.replit.dev';
+  <script type="module">
+    import { initThreeJS, gameData } from './game.js';
 
-        const API_BASE = `https://${REPLIT_URL}`;
-        const WS_BASE = `wss://${REPLIT_URL}`;
+    const REPLIT_URL = window.location.host.includes('replit.dev') 
+        ? window.location.host 
+        : 'c0a57a38-5e07-47e2-832b-3893a6a45c9d-00-1onb29g72tmp2.picard.replit.dev';
 
-        let state = {
-            currentPlayer: JSON.parse(localStorage.getItem('currentPlayer') || 'null'),
-            currentLobby: null,
-            lobbies: [],
-            remotePlayers: [],
-            nameInput: '',
-            newLobbyName: '',
-            loading: false
-        };
+    const API_BASE = `https://${REPLIT_URL}`;
+    const WS_BASE = `wss://${REPLIT_URL}`;
 
-        function render() {
-            const app = document.getElementById('app');
-            if (!state.currentLobby) {
-                app.innerHTML = renderLobbyBrowser();
-            } else {
-                app.innerHTML = renderGameView();
-                initThreeJS();
-            }
-            attachEventListeners();
-        }
+    let state = {
+      currentPlayer: JSON.parse(localStorage.getItem('currentPlayer') || 'null'),
+      currentLobby: null,
+      lobbies: [],
+      remotePlayers: [],
+      nameInput: '',
+      newLobbyName: '',
+      loading: false
+    };
+
+    function render() {
+      const app = document.getElementById('app');
+      if (!state.currentLobby) {
+        app.innerHTML = renderLobbyBrowser();
+      } else {
+        app.innerHTML = renderGameView();
+        initThreeJS(state, WS_BASE); // initialize game
+      }
+      attachEventListeners();
+    }
 
         function renderLobbyBrowser() {
             return `
