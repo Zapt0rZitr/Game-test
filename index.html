@@ -6,11 +6,12 @@
   <title>Three.js Multiplayer Lobbies</title>
   <style>
     body { margin: 0; overflow: hidden; font-family: sans-serif; background: #222; color: white; }
-    #lobby-selection { position: absolute; top: 20px; left: 20px; background: #333; padding: 20px; border-radius: 8px; }
+    #lobby-selection { position: absolute; top: 20px; left: 20px; background: #333; padding: 20px; border-radius: 8px; z-index: 100; }
     #lobby-selection h1 { margin-bottom: 10px; }
-    #lobby-list li { cursor: pointer; margin-bottom: 5px; }
-    #lobby-list li:hover { color: #0af; }
-    #leave-btn { position: absolute; top: 20px; right: 20px; padding: 10px; background: #f44; border: none; border-radius: 5px; cursor: pointer; }
+    #lobby-list { list-style: none; padding: 0; }
+    #lobby-list li { cursor: pointer; margin-bottom: 5px; padding: 8px; background: #444; border-radius: 4px; transition: background 0.2s; }
+    #lobby-list li:hover { background: #555; color: #0af; }
+    #leave-btn { position: absolute; top: 20px; right: 20px; padding: 10px; background: #f44; border: none; border-radius: 5px; cursor: pointer; z-index: 100; color: white; font-weight: bold; }
   </style>
 </head>
 <body>
@@ -62,29 +63,31 @@
     }
 
     async function loadLobbies() {
-      const res = await fetch(`${API_BASE}/api/lobbies`);
-      let lobbies = await res.json();
+      try {
+        const res = await fetch(`${API_BASE}/api/lobbies`);
+        let lobbies = await res.json();
 
-      // If no lobbies exist, create 3 by default
-      if(lobbies.length === 0) {
-        for(let i=1;i<=3;i++) {
-          const create = await fetch(`${API_BASE}/api/lobbies`, {
+        // If no lobbies exist, create one by default for testing
+        if(lobbies.length === 0) {
+          await fetch(`${API_BASE}/api/lobbies`, {
             method: 'POST',
             headers:{'Content-Type':'application/json'},
-            body: JSON.stringify({name:`Lobby ${i}`})
+            body: JSON.stringify({name: 'Default Lobby', type: 'threejs'})
           });
+          lobbies = await fetch(`${API_BASE}/api/lobbies`).then(r=>r.json());
         }
-        lobbies = await fetch(`${API_BASE}/api/lobbies`).then(r=>r.json());
-      }
 
-      const list = document.getElementById('lobby-list');
-      list.innerHTML = '';
-      lobbies.forEach(lobby=>{
-        const li = document.createElement('li');
-        li.textContent = lobby.name;
-        li.onclick = () => joinLobby(lobby.id);
-        list.appendChild(li);
-      });
+        const list = document.getElementById('lobby-list');
+        list.innerHTML = '';
+        lobbies.forEach(lobby=>{
+          const li = document.createElement('li');
+          li.textContent = lobby.name;
+          li.onclick = () => joinLobby(lobby.id);
+          list.appendChild(li);
+        });
+      } catch(e) {
+        console.error('Failed to load lobbies:', e);
+      }
     }
 
     function joinLobby(id) {
@@ -97,7 +100,11 @@
 
     document.getElementById('leave-btn').onclick = async () => {
       if(!currentPlayer) return;
-      await fetch(`${API_BASE}/api/players/${currentPlayer.id}`, {method:'DELETE'});
+      try {
+        await fetch(`${API_BASE}/api/players/${currentPlayer.id}`, {method:'DELETE'});
+      } catch(e) {
+        console.error('Failed to leave:', e);
+      }
       localStorage.removeItem('currentPlayer');
       window.location.reload();
     };
@@ -138,7 +145,8 @@
     }
 
     function updatePlayer(delta) {
-      if(!playerCube) return;
+      if(!controls || !controls.isLocked) return;
+      
       let velocity = new THREE.Vector3();
       if(keys['w']) velocity.z -= speed*delta;
       if(keys['s']) velocity.z += speed*delta;
@@ -147,8 +155,6 @@
 
       controls.moveRight(velocity.x);
       controls.moveForward(velocity.z);
-
-      playerCube.position.copy(camera.position);
 
       if(ws && ws.readyState===WebSocket.OPEN) {
         ws.send(JSON.stringify({
@@ -162,27 +168,49 @@
     function addPlayerCube(player) {
       if(cubes[player.id]) return;
       const geo = new THREE.BoxGeometry(1,1,1);
-      const mat = new THREE.MeshStandardMaterial({color:player.color||Math.random()*0xffffff});
+      const mat = new THREE.MeshStandardMaterial({color: player.color || Math.random()*0xffffff});
       const cube = new THREE.Mesh(geo, mat);
-      cube.position.set(player.position.x, player.position.y, player.position.z);
+      
+      // Initial position
+      const pos = player.position || {x:0, y:0.5, z:0};
+      cube.position.set(pos.x, pos.y, pos.z);
+      
       scene.add(cube);
       cubes[player.id] = cube;
-      if(player.id===currentPlayer.id) playerCube = cube;
     }
 
     function connectWebSocket() {
       const protocol = window.location.protocol==='https:'?'wss:':'ws:';
-      ws = new WebSocket(`${protocol}//${API_BASE.replace(/^https?:\/\//,'')}/ws`);
+      const wsHost = API_BASE.replace(/^https?:\/\//,'');
+      ws = new WebSocket(`${protocol}//${wsHost}/ws`);
+      
       ws.onopen = () => {
         ws.send(JSON.stringify({type:'joinLobby',playerId:currentPlayer.id,lobbyId}));
       };
+      
       ws.onmessage = (event)=>{
         const msg = JSON.parse(event.data);
-        if(msg.type==='gameState') msg.players.forEach(addPlayerCube);
+        if(msg.type==='gameState') {
+          msg.players.forEach(addPlayerCube);
+        }
+        if(msg.type==='playerJoined') {
+          addPlayerCube(msg.payload);
+        }
         if(msg.type==='playerUpdate') {
           const p = msg.player;
-          if(p.id!==currentPlayer.id && cubes[p.id]) {
-            cubes[p.id].position.set(p.position.x,p.position.y,p.position.z);
+          if(p.id!==currentPlayer.id) {
+            if(!cubes[p.id]) {
+              addPlayerCube(p);
+            } else {
+              cubes[p.id].position.set(p.position.x, p.position.y, p.position.z);
+              cubes[p.id].rotation.set(p.rotation.x, p.rotation.y, p.rotation.z);
+            }
+          }
+        }
+        if(msg.type==='playerLeft') {
+          if(cubes[msg.payload.id]) {
+            scene.remove(cubes[msg.payload.id]);
+            delete cubes[msg.payload.id];
           }
         }
       };
