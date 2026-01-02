@@ -1,81 +1,134 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GitHub Game Lobby</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script type="importmap">
-    {
-      "imports": {
-        "three": "https://unpkg.com/three@0.160.0/build/three.module.js"
-      }
-    }
-    </script>
-    <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap');
-        body { font-family: 'Inter', sans-serif; }
-        kbd { font-family: monospace; }
-        .bg-slate-950 { background-color: #020617; }
-    </style>
-</head>
-<body class="bg-slate-950 text-white overflow-hidden">
-    <div id="app" class="h-screen w-full flex flex-col"></div>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GitHub Game Lobby</title>
 
-<script type="module">
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js"
+    }
+  }
+  </script>
+
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap');
+    body { font-family: 'Inter', sans-serif; }
+  </style>
+</head>
+
+<body class="bg-slate-950 text-white overflow-hidden">
+  <div id="app" class="h-screen w-full flex flex-col"></div>
+
+  <script type="module">
     import { startGame, stopGame } from './game.js';
 
-    const REPLIT_URL = window.location.host.includes('replit.dev') 
-        ? window.location.host 
-        : 'c0a57a38-5e07-47e2-832b-3893a6a45c9d-00-1onb29g72tmp2.picard.replit.dev';
+    const REPLIT_URL = window.location.host.includes('replit.dev')
+      ? window.location.host
+      : 'c0a57a38-5e07-47e2-832b-3893a6a45c9d-00-1onb29g72tmp2.picard.replit.dev';
 
     const API_BASE = `https://${REPLIT_URL}`;
     const WS_BASE = `wss://${REPLIT_URL}`;
 
     let state = {
-        currentPlayer: JSON.parse(localStorage.getItem('currentPlayer') || 'null'),
-        currentLobby: null,
-        lobbies: [],
-        remotePlayers: [],
-        nameInput: '',
-        newLobbyName: ''
+      currentPlayer: JSON.parse(localStorage.getItem('currentPlayer') || 'null'),
+      currentLobby: null,
+      lobbies: [],
+      remotePlayers: [],
+      nameInput: '',
+      newLobbyName: ''
     };
 
     function render() {
-        const app = document.getElementById('app');
-        if (!state.currentLobby) {
-            app.innerHTML = renderLobbyBrowser();
-        } else {
-            app.innerHTML = renderGameView();
-            startGame({
-                canvasId: 'gameCanvas',
-                wsBase: WS_BASE,
-                state
-            });
-        }
-        attachEventListeners();
+      const app = document.getElementById('app');
+
+      if (!state.currentLobby) {
+        stopGame();
+        app.innerHTML = renderLobbyBrowser();
+      } else {
+        app.innerHTML = renderGameView();
+        startGame({
+          state,
+          WS_BASE,
+          onRemotePlayersUpdate(players) {
+            state.remotePlayers = players;
+            updatePlayerCount();
+          }
+        });
+      }
+
+      attachEventListeners();
     }
 
-    async function leaveLobby() {
-        if (state.currentPlayer) {
-            await fetch(`${API_BASE}/api/players/${state.currentPlayer.id}`, { method: 'DELETE' });
-        }
-        stopGame();
-        state.currentPlayer = null;
-        state.currentLobby = null;
-        state.remotePlayers = [];
-        localStorage.removeItem('currentPlayer');
-        render();
+    function renderLobbyBrowser() {
+      return `
+        <div class="h-screen flex items-center justify-center">
+          <div class="bg-slate-900 p-8 rounded-xl w-96">
+            <input id="nameInput" placeholder="Username"
+              class="w-full mb-4 p-2 bg-slate-800 rounded" />
+            <button id="joinBtn"
+              class="w-full bg-blue-600 py-2 rounded">Join Lobby</button>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderGameView() {
+      return `
+        <header class="h-14 px-4 flex items-center justify-between bg-black/40">
+          <span id="playerCount"></span>
+          <button id="leaveBtn" class="bg-red-600 px-3 py-1 rounded">Leave</button>
+        </header>
+        <canvas id="gameCanvas" class="w-full h-full"></canvas>
+      `;
+    }
+
+    function attachEventListeners() {
+      const nameInput = document.getElementById('nameInput');
+      if (nameInput) {
+        nameInput.oninput = e => state.nameInput = e.target.value;
+      }
+
+      const joinBtn = document.getElementById('joinBtn');
+      if (joinBtn) {
+        joinBtn.onclick = async () => {
+          if (!state.nameInput) return alert('Enter a name');
+
+          const res = await fetch(`${API_BASE}/api/players`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: state.nameInput, lobbyId: 1 })
+          });
+
+          state.currentPlayer = await res.json();
+          localStorage.setItem('currentPlayer', JSON.stringify(state.currentPlayer));
+          state.currentLobby = { id: 1, name: 'Main Lobby' };
+          render();
+        };
+      }
+
+      const leaveBtn = document.getElementById('leaveBtn');
+      if (leaveBtn) {
+        leaveBtn.onclick = () => {
+          stopGame();
+          state.currentPlayer = null;
+          state.currentLobby = null;
+          localStorage.removeItem('currentPlayer');
+          render();
+        };
+      }
     }
 
     function updatePlayerCount() {
-        const el = document.getElementById('playerCount');
-        if (el) el.textContent = `${state.remotePlayers.length + 1} Players Online`;
+      const el = document.getElementById('playerCount');
+      if (el) el.textContent = `${state.remotePlayers.length + 1} Players Online`;
     }
 
-    window.updatePlayerCount = updatePlayerCount; // exposed for game.js
-
-    fetchLobbies();
-</script>
+    render();
+  </script>
 </body>
 </html>
