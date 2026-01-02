@@ -244,11 +244,10 @@
         else if (msg.type === 'playerLeft') {
             state.remotePlayers = state.remotePlayers.filter(p => p.id !== msg.payload.id);
             const mesh = gameData.remoteMeshes.get(msg.payload.id);
-            if (mesh) {
-                gameData.scene.remove(mesh);
-                gameData.remoteMeshes.delete(msg.payload.id);
-            }
-        } else if (msg.type === 'playerUpdate') {
+            if (mesh) gameData.scene.remove(mesh);
+            gameData.remoteMeshes.delete(msg.payload.id);
+        }
+        else if (msg.type === 'playerUpdate') {
             const p = state.remotePlayers.find(pl => pl.id === msg.player.id);
             if (p) Object.assign(p, msg.player);
             else state.remotePlayers.push(msg.player);
@@ -268,33 +267,31 @@
     light.position.set(5, 10, 7.5);
     scene.add(light);
 
-    // Local player
+    // Player group and cube
     const localGroup = new THREE.Group();
-    const mesh = new THREE.Mesh(new THREE.BoxGeometry(0.8, 1.8, 0.8), new THREE.MeshStandardMaterial({ color: 0x3b82f6 }));
+    const mesh = new THREE.Mesh(
+        new THREE.BoxGeometry(0.8, 1.8, 0.8),
+        new THREE.MeshStandardMaterial({ color: 0x3b82f6 })
+    );
     mesh.position.y = 0.9;
     localGroup.add(mesh);
-    scene.add(localGroup);
 
-    // Username above player
-    const canvasLabel = document.createElement('canvas');
-    const ctx = canvasLabel.getContext('2d');
-    ctx.font = '40px Arial';
-    ctx.fillStyle = 'white';
-    ctx.fillText(state.currentPlayer.name || 'Anon', 0, 40);
-    const texture = new THREE.CanvasTexture(canvasLabel);
-    const label = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, depthTest: false }));
-    label.scale.set(2, 0.5, 1);
-    label.position.set(0, 2.5, 0);
-    localGroup.add(label);
+    // Username above cube
+    const nameDiv = document.createElement('div');
+    nameDiv.style.position = 'absolute';
+    nameDiv.style.color = 'white';
+    nameDiv.style.fontWeight = 'bold';
+    nameDiv.textContent = state.currentPlayer.name || 'Anonymous';
+    document.body.appendChild(nameDiv);
 
-    gameData = { ...gameData, scene, camera, renderer, localGroup };
+    gameData = { ...gameData, scene, camera, renderer, localGroup, nameDiv };
 
     let yaw = 0, pitch = 0;
     const keys = {};
-    window.onkeydown = (e) => keys[e.code] = true;
-    window.onkeyup = (e) => keys[e.code] = false;
+    window.onkeydown = e => keys[e.code] = true;
+    window.onkeyup = e => keys[e.code] = false;
     canvas.onclick = () => canvas.requestPointerLock();
-    window.onmousemove = (e) => {
+    window.onmousemove = e => {
         if (document.pointerLockElement === canvas) {
             yaw -= e.movementX * 0.002;
             pitch -= e.movementY * 0.002;
@@ -305,25 +302,30 @@
     function animate() {
         gameData.animationId = requestAnimationFrame(animate);
 
+        // Movement
         const moveSpeed = 0.1;
         const dir = new THREE.Vector3();
         if (keys['KeyW']) dir.z += 1;
         if (keys['KeyS']) dir.z -= 1;
         if (keys['KeyA']) dir.x += 1;
         if (keys['KeyD']) dir.x -= 1;
-        dir.applyAxisAngle(new THREE.Vector3(0,1,0), yaw).multiplyScalar(moveSpeed);
+        dir.normalize().applyAxisAngle(new THREE.Vector3(0, 1, 0), yaw).multiplyScalar(moveSpeed);
         localGroup.position.add(dir);
 
-        // First-person camera at player head
-        camera.position.set(localGroup.position.x, localGroup.position.y + 1.6, localGroup.position.z);
-        const target = new THREE.Vector3(
-            localGroup.position.x + Math.sin(yaw) * Math.cos(pitch),
-            localGroup.position.y + 1.6 + Math.sin(pitch),
-            localGroup.position.z + Math.cos(yaw) * Math.cos(pitch)
+        // Camera: first person
+        camera.position.set(
+            localGroup.position.x,
+            localGroup.position.y + 1.6, // eye height
+            localGroup.position.z
         );
-        camera.lookAt(target);
+        const lookDir = new THREE.Vector3(
+            Math.sin(yaw) * Math.cos(pitch),
+            Math.sin(pitch),
+            Math.cos(yaw) * Math.cos(pitch)
+        ).add(camera.position);
+        camera.lookAt(lookDir);
 
-        // Send player update
+        // Send position/rotation to server
         if (ws.readyState === WebSocket.OPEN) {
             ws.send(JSON.stringify({
                 type: 'update',
@@ -337,30 +339,48 @@
             if (p.id === state.currentPlayer.id) return;
             let m = gameData.remoteMeshes.get(p.id);
             if (!m) {
-                m = new THREE.Mesh(new THREE.BoxGeometry(0.8, 1.8, 0.8), new THREE.MeshStandardMaterial({ color: 0xef4444 }));
-                // Add username sprite
-                const canvasLabel = document.createElement('canvas');
-                const ctx = canvasLabel.getContext('2d');
-                ctx.font = '40px Arial';
-                ctx.fillStyle = 'white';
-                ctx.fillText(p.name || 'Anon', 0, 40);
-                const texture = new THREE.CanvasTexture(canvasLabel);
-                const label = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, depthTest: false }));
-                label.scale.set(2, 0.5, 1);
-                label.position.set(0, 2.5, 0);
-                m.add(label);
+                m = new THREE.Group();
+                const cube = new THREE.Mesh(new THREE.BoxGeometry(0.8, 1.8, 0.8), new THREE.MeshStandardMaterial({ color: 0xef4444 }));
+                cube.position.y = 0.9;
+                m.add(cube);
+
+                // Username label
+                const label = document.createElement('div');
+                label.style.position = 'absolute';
+                label.style.color = 'white';
+                label.style.fontWeight = 'bold';
+                label.textContent = p.name;
+                document.body.appendChild(label);
+                m.userData.label = label;
 
                 scene.add(m);
                 gameData.remoteMeshes.set(p.id, m);
             }
-            m.position.set(p.position.x, p.position.y + 0.9, p.position.z);
+            m.position.set(p.position.x, p.position.y, p.position.z);
             m.rotation.y = p.rotation.y;
+
+            // Update screen position of label
+            const vector = new THREE.Vector3(0, 1.9, 0);
+            vector.applyMatrix4(m.matrixWorld);
+            vector.project(camera);
+            const x = (vector.x * 0.5 + 0.5) * window.innerWidth;
+            const y = ( -vector.y * 0.5 + 0.5) * window.innerHeight;
+            m.userData.label.style.left = `${x}px`;
+            m.userData.label.style.top = `${y}px`;
         });
+
+        // Local player label
+        const localVector = new THREE.Vector3(0, 1.9, 0);
+        localVector.applyMatrix4(localGroup.matrixWorld);
+        localVector.project(camera);
+        gameData.nameDiv.style.left = `${(localVector.x * 0.5 + 0.5) * window.innerWidth}px`;
+        gameData.nameDiv.style.top = `${(-localVector.y * 0.5 + 0.5) * window.innerHeight}px`;
 
         renderer.render(scene, camera);
     }
     animate();
 }
+
 
 
         function updatePlayerCount() {
