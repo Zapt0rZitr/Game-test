@@ -100,46 +100,42 @@ export function initThreeJS(state, WS_BASE) {
             }));
         }
 
-   state.remotePlayers.forEach(p => {
-    if (p.id === state.currentPlayer.id) return;
-    let obj = gameData.remoteMeshes.get(p.id);
-    if (!obj) {
-        const remoteMesh = new THREE.Mesh(
-            new THREE.BoxGeometry(0.8, 1.8, 0.8),
-            new THREE.MeshStandardMaterial({ color: 0xef4444 })
-        );
+        state.remotePlayers.forEach(p=>{
+            if(p.id===state.currentPlayer.id) return;
+            let obj = gameData.remoteMeshes.get(p.id);
+  if (!obj) {
+    const remoteMesh = new THREE.Mesh(
+        new THREE.BoxGeometry(0.8, 1.8, 0.8),
+        new THREE.MeshStandardMaterial({ color: 0xef4444 })
+    );
 
-        // Label
-        const label = createLabel(p.name);
-        label.position.set(0, 2.2, 0);
+    // Label above player
+    const label = createLabel(p.name);
+    label.position.set(0, 2.2, 0);
 
-        // Direction indicator (yellow triangle)
-        const arrowGeom = new THREE.ConeGeometry(0.2, 0.5, 8);
-        const arrowMat = new THREE.MeshBasicMaterial({ color: 0xffd60a }); // yellow
-        const arrow = new THREE.Mesh(arrowGeom, arrowMat);
-        arrow.rotation.x = Math.PI / 2; // point forward along Z
-        arrow.position.set(0, 1.0, 0.7); // slightly above ground and in front
+    // 2D floor arrow
+    const arrowGeom = new THREE.ConeGeometry(0.15, 0.3, 4); // small flat triangle
+    const arrowMat = new THREE.MeshBasicMaterial({ color: 0xffd60a });
+    const floorArrow = new THREE.Mesh(arrowGeom, arrowMat);
+    floorArrow.rotation.x = -Math.PI / 2; // flat on floor
+    floorArrow.position.set(0, 0.01, 0); // slightly above floor
 
-        scene.add(remoteMesh);
-        scene.add(label);
-        scene.add(arrow);
+    scene.add(remoteMesh);
+    scene.add(label);
+    scene.add(floorArrow);
 
-        obj = { mesh: remoteMesh, label, arrow };
-        gameData.remoteMeshes.set(p.id, obj);
-    }
+    obj = { mesh: remoteMesh, label, floorArrow };
+    gameData.remoteMeshes.set(p.id, obj);
+}
+obj.mesh.position.set(p.position.x, p.position.y + 0.9, p.position.z);
+obj.mesh.rotation.y = p.rotation.y;
 
-    // Update position
-    obj.mesh.position.set(p.position.x, p.position.y + 0.9, p.position.z);
-    obj.mesh.rotation.y = p.rotation.y;
+obj.label.position.set(p.position.x, p.position.y + 2.2, p.position.z);
 
-    // Update label
-    obj.label.position.set(p.position.x, p.position.y + 2.2, p.position.z);
+obj.floorArrow.position.set(p.position.x, 0.01, p.position.z); // arrow on floor
+obj.floorArrow.rotation.y = p.rotation.y; // point forward
 
-    // Update arrow
-    obj.arrow.position.set(p.position.x, p.position.y + 1.0, p.position.z + 0.7); // offset in local space
-    obj.arrow.rotation.y = p.rotation.y;
-});
-
+        });
 
         renderer.render(scene,camera);
     }
