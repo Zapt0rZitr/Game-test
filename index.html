@@ -240,20 +240,21 @@
     ws.onmessage = (e) => {
         const msg = JSON.parse(e.data);
         if (msg.type === 'gameState') {
-          state.remotePlayers = msg.players;
+            state.remotePlayers = msg.players;
         } else if (msg.type === 'playerJoined') {
-          state.remotePlayers.push(msg.payload);
+            state.remotePlayers.push(msg.payload);
         } else if (msg.type === 'playerLeft') {
-          state.remotePlayers = state.remotePlayers.filter(p => p.id !== msg.payload.id);
-          const mesh = gameData.remoteMeshes.get(msg.payload.id);
-          if (mesh) {
-            gameData.scene.remove(mesh);
-            gameData.remoteMeshes.delete(msg.payload.id);
-          }
+            state.remotePlayers = state.remotePlayers.filter(p => p.id !== msg.payload.id);
+            const meshObj = gameData.remoteMeshes.get(msg.payload.id);
+            if (meshObj) {
+                scene.remove(meshObj.mesh);
+                scene.remove(meshObj.label);
+                gameData.remoteMeshes.delete(msg.payload.id);
+            }
         } else if (msg.type === 'playerUpdate') {
-          const p = state.remotePlayers.find(pl => pl.id === msg.player.id);
-          if (p) Object.assign(p, msg.player);
-          else state.remotePlayers.push(msg.player);
+            const p = state.remotePlayers.find(pl => pl.id === msg.player.id);
+            if (p) Object.assign(p, msg.player);
+            else state.remotePlayers.push(msg.player);
         }
         updatePlayerCount();
     };
@@ -270,19 +271,19 @@
     light.position.set(5, 10, 7.5);
     scene.add(light);
 
-    // Local player
     const localGroup = new THREE.Group();
-    const mesh = new THREE.Mesh(
-        new THREE.BoxGeometry(0.8, 1.8, 0.8),
-        new THREE.MeshStandardMaterial({ color: 0x3b82f6 })
-    );
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(0.8, 1.8, 0.8), new THREE.MeshStandardMaterial({ color: 0x3b82f6 }));
     mesh.position.y = 0.9;
     localGroup.add(mesh);
     scene.add(localGroup);
 
+    // Add username sprite for local player
+    const localLabel = createLabel(state.currentPlayer.name);
+    localLabel.position.set(0, 2.2, 0);
+    localGroup.add(localLabel);
+
     gameData = { ...gameData, scene, camera, renderer, localGroup };
 
-    // For first-person look
     let yaw = 0, pitch = 0;
     const keys = {};
     window.onkeydown = (e) => keys[e.code] = true;
@@ -296,25 +297,9 @@
         }
     };
 
-    function createNameSprite(name) {
-        const canvas = document.createElement('canvas');
-        canvas.width = 256;
-        canvas.height = 64;
-        const ctx = canvas.getContext('2d');
-        ctx.font = '28px Inter';
-        ctx.fillStyle = 'white';
-        ctx.textAlign = 'center';
-        ctx.fillText(name, 128, 40);
-        const texture = new THREE.CanvasTexture(canvas);
-        const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, transparent: true }));
-        sprite.scale.set(1.5, 0.4, 1);
-        return sprite;
-    }
-
     function animate() {
         gameData.animationId = requestAnimationFrame(animate);
 
-        // Movement
         const moveSpeed = 0.1;
         const dir = new THREE.Vector3();
         if (keys['KeyW']) dir.z -= 1;
@@ -323,16 +308,21 @@
         if (keys['KeyD']) dir.x += 1;
         dir.normalize().applyAxisAngle(new THREE.Vector3(0, 1, 0), yaw).multiplyScalar(moveSpeed);
         localGroup.position.add(dir);
+        localGroup.rotation.y = yaw;
 
-        // Camera first-person
+        // First-person camera at head level
         camera.position.set(
             localGroup.position.x,
-            localGroup.position.y + 1.6, // eye height
+            localGroup.position.y + 1.6,
             localGroup.position.z
         );
-        camera.rotation.set(pitch, yaw, 0);
+        const target = new THREE.Vector3(
+            localGroup.position.x + Math.sin(yaw) * Math.cos(pitch),
+            localGroup.position.y + 1.6 + Math.sin(pitch),
+            localGroup.position.z + Math.cos(yaw) * Math.cos(pitch)
+        );
+        camera.lookAt(target);
 
-        // Send position to server
         if (ws.readyState === WebSocket.OPEN) {
             ws.send(JSON.stringify({
                 type: 'update',
@@ -341,29 +331,46 @@
             }));
         }
 
-        // Remote players
+        // Render remote players
         state.remotePlayers.forEach(p => {
             if (p.id === state.currentPlayer.id) return;
-            let m = gameData.remoteMeshes.get(p.id);
-            if (!m) {
-                m = new THREE.Mesh(
-                    new THREE.BoxGeometry(0.8, 1.8, 0.8),
-                    new THREE.MeshStandardMaterial({ color: 0xef4444 })
-                );
-                const nameSprite = createNameSprite(p.name || 'Anon');
-                nameSprite.position.set(0, 1.9, 0); // above the head
-                m.add(nameSprite);
-                scene.add(m);
-                gameData.remoteMeshes.set(p.id, m);
+            let obj = gameData.remoteMeshes.get(p.id);
+            if (!obj) {
+                const remoteMesh = new THREE.Mesh(new THREE.BoxGeometry(0.8, 1.8, 0.8), new THREE.MeshStandardMaterial({ color: 0xef4444 }));
+                const label = createLabel(p.name);
+                label.position.set(0, 2.2, 0);
+                scene.add(remoteMesh);
+                scene.add(label);
+                obj = { mesh: remoteMesh, label };
+                gameData.remoteMeshes.set(p.id, obj);
             }
-            m.position.set(p.position.x, p.position.y + 0.9, p.position.z);
-            m.rotation.y = p.rotation.y;
+            obj.mesh.position.set(p.position.x, p.position.y + 0.9, p.position.z);
+            obj.mesh.rotation.y = p.rotation.y;
+            obj.label.position.set(p.position.x, p.position.y + 2.2, p.position.z);
         });
 
         renderer.render(scene, camera);
     }
-
     animate();
+
+    // Function to create username label above player
+    function createLabel(name) {
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        ctx.font = '48px Inter';
+        const textWidth = ctx.measureText(name).width;
+        canvas.width = textWidth + 20;
+        canvas.height = 64;
+        ctx.font = '48px Inter';
+        ctx.fillStyle = 'white';
+        ctx.textAlign = 'center';
+        ctx.fillText(name, canvas.width / 2, 48);
+        const texture = new THREE.CanvasTexture(canvas);
+        const material = new THREE.SpriteMaterial({ map: texture, depthTest: false });
+        const sprite = new THREE.Sprite(material);
+        sprite.scale.set(canvas.width / 100, canvas.height / 100, 1);
+        return sprite;
+    }
 }
 
 
