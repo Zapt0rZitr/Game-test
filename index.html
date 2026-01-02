@@ -1,223 +1,339 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Three.js Multiplayer Lobbies</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GitHub Game Lobby</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://unpkg.com/three@0.160.0/build/three.module.js"
+      }
+    }
+  </script>
   <style>
-    body { margin: 0; overflow: hidden; font-family: sans-serif; background: #222; color: white; }
-    #lobby-selection { position: absolute; top: 20px; left: 20px; background: #333; padding: 20px; border-radius: 8px; z-index: 100; }
-    #lobby-selection h1 { margin-bottom: 10px; }
-    #lobby-list { list-style: none; padding: 0; }
-    #lobby-list li { cursor: pointer; margin-bottom: 5px; padding: 8px; background: #444; border-radius: 4px; transition: background 0.2s; }
-    #lobby-list li:hover { background: #555; color: #0af; }
-    #leave-btn { position: absolute; top: 20px; right: 20px; padding: 10px; background: #f44; border: none; border-radius: 5px; cursor: pointer; z-index: 100; color: white; font-weight: bold; }
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap');
+    body { font-family: 'Inter', sans-serif; }
+    kbd { font-family: monospace; }
+    .bg-slate-950 { background-color: #020617; }
   </style>
 </head>
-<body>
-  <div id="lobby-selection">
-    <h1>Select Lobby</h1>
-    <ul id="lobby-list"></ul>
-  </div>
-  <button id="leave-btn" style="display:none;">Leave Lobby</button>
+<body class="bg-slate-950 text-white overflow-hidden">
+  <div id="app" class="h-screen w-full flex flex-col"></div>
 
-  <script src="https://cdn.jsdelivr.net/npm/three@0.155.0/build/three.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/three@0.155.0/examples/js/controls/PointerLockControls.js"></script>
-  <script>
-    const API_BASE = 'https://node-weaver--Zapt0rWut.replit.app'; // Your backend URL
-    let ws;
-    let currentPlayer = null;
-    let lobbyId = null;
-    let scene, camera, renderer, controls;
-    let cubes = {};
-    let playerCube;
-    let clock = new THREE.Clock();
-    let keys = {};
-    let speed = 5;
+  <script type="module">
+    import * as THREE from 'three';
 
-    // Initialize player from storage or prompt for name
-    function initPlayer() {
-      const stored = localStorage.getItem('currentPlayer');
-      if (stored) {
-        currentPlayer = JSON.parse(stored);
-        loadLobbies();
+    // IMPORTANT: Update this to your Replit backend URL when hosting
+    const API_BASE = window.location.origin;
+    const WS_BASE = (window.location.protocol === 'https:' ? 'wss://' : 'ws://') + window.location.host;
+
+    let state = {
+      currentPlayer: JSON.parse(localStorage.getItem('currentPlayer') || 'null'),
+      currentLobby: null,
+      lobbies: [],
+      remotePlayers: [],
+      nameInput: '',
+      newLobbyName: '',
+      loading: false
+    };
+
+    // UI Components
+    function render() {
+      const app = document.getElementById('app');
+      if (!state.currentPlayer) {
+        app.innerHTML = renderLobbyBrowser();
       } else {
-        const name = prompt('Enter your player name');
-        if (!name) return alert('Name required');
-        joinLobbyAPI(name);
+        app.innerHTML = renderGameView();
+        initThreeJS();
+      }
+      attachEventListeners();
+    }
+
+    function renderLobbyBrowser() {
+      return `
+        <div class="min-h-screen flex items-center justify-center p-4">
+          <div class="w-full max-w-4xl p-8 bg-slate-900 border-2 border-slate-800 rounded-2xl shadow-2xl">
+            <div class="flex flex-col md:flex-row gap-8">
+              <div class="flex-1 space-y-6">
+                <div>
+                  <h1 class="text-4xl font-black tracking-tighter mb-2">GITHUB GAME</h1>
+                  <p class="text-slate-400">Pick a lobby and enter the arena.</p>
+                </div>
+                <div class="space-y-4">
+                  <label class="text-sm font-bold uppercase tracking-wider text-slate-500">Your Identity</label>
+                  <input id="nameInput" placeholder="Enter username..." value="${state.nameInput}" 
+                    class="w-full h-12 bg-slate-800 border-2 border-slate-700 rounded-xl px-4 text-lg font-medium focus:border-blue-500 outline-none transition-all text-white">
+                </div>
+                <div class="pt-4">
+                  <div class="flex items-center justify-between mb-4">
+                    <h3 class="font-bold text-lg">Active Lobbies</h3>
+                  </div>
+                  <div id="lobbyList" class="grid gap-3">
+                    ${state.lobbies.length === 0 ? '<p class="text-slate-500">No active lobbies. Create one!</p>' : state.lobbies.map(l => `
+                      <button data-lobby-id="${l.id}" class="join-lobby-btn flex items-center justify-between p-4 rounded-xl border-2 border-transparent bg-slate-800/50 hover:bg-slate-800 hover:border-blue-500/20 transition-all text-left group">
+                        <div class="flex items-center gap-4">
+                          <div class="w-10 h-10 rounded-lg bg-blue-500/10 flex items-center justify-center text-blue-500">
+                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+                          </div>
+                          <div>
+                            <p class="font-bold">${l.name}</p>
+                            <p class="text-xs text-slate-500 uppercase tracking-widest">${l.type}</p>
+                          </div>
+                        </div>
+                        <span class="bg-slate-700 text-white px-3 py-1 rounded-lg text-sm font-bold opacity-0 group-hover:opacity-100 transition-opacity">Join</span>
+                      </button>
+                    `).join('')}
+                  </div>
+                </div>
+              </div>
+              <div class="w-full md:w-72 bg-slate-800/30 rounded-2xl p-6 border-2 border-dashed border-slate-700 flex flex-col items-center justify-center text-center space-y-4">
+                <div class="w-16 h-16 rounded-full bg-blue-500/5 flex items-center justify-center text-blue-500/40">
+                  <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+                </div>
+                <div>
+                  <h4 class="font-bold">New Lobby</h4>
+                  <p class="text-sm text-slate-500">Start a fresh session</p>
+                </div>
+                <input id="newLobbyName" placeholder="Lobby name..." class="w-full bg-slate-800 border-2 border-slate-700 rounded-lg px-3 py-2 outline-none text-white">
+                <button id="createLobbyBtn" class="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-2 rounded-lg transition-colors">Create & Start</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderGameView() {
+      return `
+        <header class="h-16 border-b border-white/10 px-6 flex items-center justify-between bg-black/20 backdrop-blur-md z-50">
+          <div class="flex items-center gap-4">
+            <button id="backBtn" class="p-2 hover:bg-white/10 rounded-lg transition-colors">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/></svg>
+            </button>
+            <div>
+              <h2 class="font-black text-sm uppercase tracking-tighter">${state.currentLobby?.name || 'Loading...'}</h2>
+              <div class="flex items-center gap-2">
+                <div class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></div>
+                <span id="playerCount" class="text-[10px] text-white/50 uppercase font-bold tracking-widest">${state.remotePlayers.length + 1} Players Online</span>
+              </div>
+            </div>
+          </div>
+          <div class="flex items-center gap-4">
+            <div class="px-4 py-2 bg-white/5 rounded-full border border-white/10 flex items-center gap-3">
+              <div class="w-6 h-6 rounded-md bg-blue-600 flex items-center justify-center text-[10px] font-black">${state.currentPlayer.name[0].toUpperCase()}</div>
+              <span class="text-xs font-bold">${state.currentPlayer.name}</span>
+            </div>
+            <button id="leaveBtn" class="bg-red-600 hover:bg-red-500 text-white text-xs font-bold px-4 py-2 rounded-lg transition-colors">Leave</button>
+          </div>
+        </header>
+        <main class="flex-1 relative">
+          <canvas id="gameCanvas" class="w-full h-full"></canvas>
+          <div class="absolute bottom-8 left-1/2 -translate-x-1/2 bg-black/60 backdrop-blur-xl border border-white/10 px-6 py-3 rounded-2xl flex items-center gap-8 pointer-events-none">
+            <div class="flex items-center gap-3">
+              <div class="flex gap-1">
+                ${['W', 'A', 'S', 'D'].map(k => `<kbd class="w-8 h-8 rounded-md bg-white/10 flex items-center justify-center text-xs font-bold border border-white/10">${k}</kbd>`).join('')}
+              </div>
+              <span class="text-[10px] uppercase font-black text-white/40 tracking-widest">Move</span>
+            </div>
+            <div class="h-4 w-px bg-white/10"></div>
+            <div class="flex items-center gap-3">
+              <div class="w-8 h-8 rounded-md bg-white/10 flex items-center justify-center text-[10px] font-bold border border-white/10">CLICK</div>
+              <span class="text-[10px] uppercase font-black text-white/40 tracking-widest">Look</span>
+            </div>
+          </div>
+        </main>
+      `;
+    }
+
+    function attachEventListeners() {
+      const nameInp = document.getElementById('nameInput');
+      if (nameInp) nameInp.oninput = (e) => state.nameInput = e.target.value;
+      
+      const lobbyInp = document.getElementById('newLobbyName');
+      if (lobbyInp) lobbyInp.oninput = (e) => state.newLobbyName = e.target.value;
+
+      const createBtn = document.getElementById('createLobbyBtn');
+      if (createBtn) createBtn.onclick = createLobby;
+
+      const backBtn = document.getElementById('backBtn');
+      if (backBtn) backBtn.onclick = leaveLobby;
+
+      const leaveBtn = document.getElementById('leaveBtn');
+      if (leaveBtn) leaveBtn.onclick = leaveLobby;
+
+      document.querySelectorAll('.join-lobby-btn').forEach(btn => {
+        btn.onclick = () => joinLobby(parseInt(btn.dataset.lobbyId));
+      });
+    }
+
+    // Logic
+    async function fetchLobbies() {
+      try {
+        const res = await fetch(`${API_BASE}/api/lobbies`);
+        state.lobbies = await res.json();
+        render();
+      } catch (e) {
+        console.error("Failed to fetch lobbies", e);
       }
     }
 
-    async function joinLobbyAPI(name) {
+    async function createLobby() {
+      if (!state.newLobbyName) return;
+      try {
+        await fetch(`${API_BASE}/api/lobbies`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: state.newLobbyName, type: 'threejs' })
+        });
+        state.newLobbyName = '';
+        fetchLobbies();
+      } catch (e) {
+        alert("Failed to create lobby");
+      }
+    }
+
+    async function joinLobby(id) {
+      if (!state.nameInput) return alert('Enter a name');
       try {
         const res = await fetch(`${API_BASE}/api/players`, {
           method: 'POST',
-          headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({ name })
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: state.nameInput, lobbyId: id })
         });
-        if (!res.ok) throw new Error('Failed to join');
-        currentPlayer = await res.json();
-        localStorage.setItem('currentPlayer', JSON.stringify(currentPlayer));
-        loadLobbies();
-      } catch(e) { alert('Failed to join lobby'); console.error(e); }
-    }
-
-    async function loadLobbies() {
-      try {
-        const res = await fetch(`${API_BASE}/api/lobbies`);
-        let lobbies = await res.json();
-
-        // If no lobbies exist, create one by default for testing
-        if(lobbies.length === 0) {
-          await fetch(`${API_BASE}/api/lobbies`, {
-            method: 'POST',
-            headers:{'Content-Type':'application/json'},
-            body: JSON.stringify({name: 'Default Lobby', type: 'threejs'})
-          });
-          lobbies = await fetch(`${API_BASE}/api/lobbies`).then(r=>r.json());
-        }
-
-        const list = document.getElementById('lobby-list');
-        list.innerHTML = '';
-        lobbies.forEach(lobby=>{
-          const li = document.createElement('li');
-          li.textContent = lobby.name;
-          li.onclick = () => joinLobby(lobby.id);
-          list.appendChild(li);
-        });
-      } catch(e) {
-        console.error('Failed to load lobbies:', e);
+        if (res.status === 409) return alert('Name taken');
+        state.currentPlayer = await res.json();
+        state.currentLobby = state.lobbies.find(l => l.id === id);
+        localStorage.setItem('currentPlayer', JSON.stringify(state.currentPlayer));
+        render();
+      } catch (e) {
+        alert("Failed to join");
       }
     }
 
-    function joinLobby(id) {
-      lobbyId = id;
-      document.getElementById('lobby-selection').style.display = 'none';
-      document.getElementById('leave-btn').style.display = 'block';
-      initThreeJS();
-      connectWebSocket();
-    }
-
-    document.getElementById('leave-btn').onclick = async () => {
-      if(!currentPlayer) return;
-      try {
-        await fetch(`${API_BASE}/api/players/${currentPlayer.id}`, {method:'DELETE'});
-      } catch(e) {
-        console.error('Failed to leave:', e);
+    async function leaveLobby() {
+      if (state.currentPlayer) {
+        try {
+          await fetch(`${API_BASE}/api/players/${state.currentPlayer.id}`, { method: 'DELETE' });
+        } catch (e) {}
       }
+      state.currentPlayer = null;
+      state.currentLobby = null;
+      state.remotePlayers = [];
       localStorage.removeItem('currentPlayer');
-      window.location.reload();
-    };
+      if (gameData.animationId) cancelAnimationFrame(gameData.animationId);
+      gameData.scene = null;
+      render();
+    }
+
+    // Game Logic
+    let gameData = { ws: null, scene: null, camera: null, renderer: null, localGroup: null, remoteMeshes: new Map(), animationId: null };
 
     function initThreeJS() {
-      scene = new THREE.Scene();
-      camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
-      renderer = new THREE.WebGLRenderer({antialias:true});
-      renderer.setSize(window.innerWidth, window.innerHeight);
-      document.body.appendChild(renderer.domElement);
+      const canvas = document.getElementById('gameCanvas');
+      if (!canvas || gameData.scene) return;
 
-      const light = new THREE.DirectionalLight(0xffffff,1);
-      light.position.set(5,10,5);
+      const ws = new WebSocket(`${WS_BASE}/ws`);
+      gameData.ws = ws;
+
+      ws.onopen = () => {
+        ws.send(JSON.stringify({ type: 'joinLobby', playerId: state.currentPlayer.id, lobbyId: state.currentLobby.id }));
+      };
+
+      ws.onmessage = (e) => {
+        const msg = JSON.parse(e.data);
+        if (msg.type === 'gameState') state.remotePlayers = msg.players;
+        else if (msg.type === 'playerJoined') state.remotePlayers.push(msg.payload);
+        else if (msg.type === 'playerLeft') state.remotePlayers = state.remotePlayers.filter(p => p.id !== msg.payload.id);
+        else if (msg.type === 'playerUpdate') {
+          const p = state.remotePlayers.find(pl => pl.id === msg.player.id);
+          if (p) Object.assign(p, msg.player);
+          else state.remotePlayers.push(msg.player);
+        }
+      };
+
+      const scene = new THREE.Scene();
+      scene.background = new THREE.Color(0x020617);
+      const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+      const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+      renderer.setSize(window.innerWidth, window.innerHeight);
+
+      scene.add(new THREE.GridHelper(100, 100, 0x1e293b, 0x0f172a));
+      scene.add(new THREE.AmbientLight(0xffffff, 0.5));
+      const light = new THREE.DirectionalLight(0xffffff, 1);
+      light.position.set(5, 10, 7.5);
       scene.add(light);
 
-      const ground = new THREE.Mesh(
-        new THREE.PlaneGeometry(100,100),
-        new THREE.MeshStandardMaterial({color:0x555555})
-      );
-      ground.rotation.x = -Math.PI/2;
-      scene.add(ground);
+      const localGroup = new THREE.Group();
+      const mesh = new THREE.Mesh(new THREE.BoxGeometry(0.8, 1.8, 0.8), new THREE.MeshStandardMaterial({ color: 0x3b82f6 }));
+      mesh.position.y = 0.9;
+      localGroup.add(mesh);
+      scene.add(localGroup);
 
-      controls = new THREE.PointerLockControls(camera, document.body);
-      document.body.addEventListener('click', ()=>controls.lock());
-      camera.position.y = 1.5;
+      gameData = { ...gameData, scene, camera, renderer, localGroup };
 
-      document.addEventListener('keydown', e=>keys[e.key.toLowerCase()]=true);
-      document.addEventListener('keyup', e=>keys[e.key.toLowerCase()]=false);
+      let yaw = 0, pitch = 0;
+      const keys = {};
+      window.onkeydown = (e) => keys[e.code] = true;
+      window.onkeyup = (e) => keys[e.code] = false;
+      canvas.onclick = () => canvas.requestPointerLock();
+      window.onmousemove = (e) => {
+        if (document.pointerLockElement === canvas) {
+          yaw -= e.movementX * 0.002;
+          pitch -= e.movementY * 0.002;
+          pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, pitch));
+        }
+      };
 
+      function animate() {
+        if (!state.currentPlayer) return;
+        gameData.animationId = requestAnimationFrame(animate);
+
+        const speed = 0.1;
+        const moveX = (keys['KeyD'] ? 1 : 0) - (keys['KeyA'] ? 1 : 0);
+        const moveZ = (keys['KeyS'] ? 1 : 0) - (keys['KeyW'] ? 1 : 0);
+        
+        if (moveX !== 0 || moveZ !== 0) {
+          const dir = new THREE.Vector3(moveX, 0, moveZ).applyAxisAngle(new THREE.Vector3(0, 1, 0), yaw).normalize();
+          localGroup.position.add(dir.multiplyScalar(speed));
+          if (ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ type: 'update', position: localGroup.position, rotation: { x: 0, y: yaw, z: 0 } }));
+          }
+        }
+
+        camera.rotation.set(pitch, yaw, 0, 'YXZ');
+        camera.position.copy(localGroup.position).add(new THREE.Vector3(0, 1.6, 0));
+
+        state.remotePlayers.forEach(p => {
+          if (p.id === state.currentPlayer.id) return;
+          let m = gameData.remoteMeshes.get(p.id);
+          if (!m) {
+            m = new THREE.Group();
+            const body = new THREE.Mesh(new THREE.BoxGeometry(0.8, 1.8, 0.8), new THREE.MeshStandardMaterial({ color: 0xef4444 }));
+            body.position.y = 0.9;
+            m.add(body);
+            scene.add(m);
+            gameData.remoteMeshes.set(p.id, m);
+          }
+          if (p.position) m.position.set(p.position.x, p.position.y, p.position.z);
+          if (p.rotation) m.rotation.y = p.rotation.y;
+        });
+
+        gameData.remoteMeshes.forEach((m, id) => {
+          if (!state.remotePlayers.find(p => p.id === id)) {
+            scene.remove(m);
+            gameData.remoteMeshes.delete(id);
+          }
+        });
+
+        renderer.render(scene, camera);
+      }
       animate();
     }
 
-    function animate() {
-      requestAnimationFrame(animate);
-      const delta = clock.getDelta();
-      updatePlayer(delta);
-      renderer.render(scene, camera);
-    }
-
-    function updatePlayer(delta) {
-      if(!controls || !controls.isLocked) return;
-      
-      let velocity = new THREE.Vector3();
-      if(keys['w']) velocity.z -= speed*delta;
-      if(keys['s']) velocity.z += speed*delta;
-      if(keys['a']) velocity.x -= speed*delta;
-      if(keys['d']) velocity.x += speed*delta;
-
-      controls.moveRight(velocity.x);
-      controls.moveForward(velocity.z);
-
-      if(ws && ws.readyState===WebSocket.OPEN) {
-        ws.send(JSON.stringify({
-          type:'update',
-          position:{x:camera.position.x,y:camera.position.y,z:camera.position.z},
-          rotation:{x:camera.rotation.x,y:camera.rotation.y,z:camera.rotation.z}
-        }));
-      }
-    }
-
-    function addPlayerCube(player) {
-      if(cubes[player.id]) return;
-      const geo = new THREE.BoxGeometry(1,1,1);
-      const mat = new THREE.MeshStandardMaterial({color: player.color || Math.random()*0xffffff});
-      const cube = new THREE.Mesh(geo, mat);
-      
-      // Initial position
-      const pos = player.position || {x:0, y:0.5, z:0};
-      cube.position.set(pos.x, pos.y, pos.z);
-      
-      scene.add(cube);
-      cubes[player.id] = cube;
-    }
-
-    function connectWebSocket() {
-      const protocol = window.location.protocol==='https:'?'wss:':'ws:';
-      const wsHost = API_BASE.replace(/^https?:\/\//,'');
-      ws = new WebSocket(`${protocol}//${wsHost}/ws`);
-      
-      ws.onopen = () => {
-        ws.send(JSON.stringify({type:'joinLobby',playerId:currentPlayer.id,lobbyId}));
-      };
-      
-      ws.onmessage = (event)=>{
-        const msg = JSON.parse(event.data);
-        if(msg.type==='gameState') {
-          msg.players.forEach(addPlayerCube);
-        }
-        if(msg.type==='playerJoined') {
-          addPlayerCube(msg.payload);
-        }
-        if(msg.type==='playerUpdate') {
-          const p = msg.player;
-          if(p.id!==currentPlayer.id) {
-            if(!cubes[p.id]) {
-              addPlayerCube(p);
-            } else {
-              cubes[p.id].position.set(p.position.x, p.position.y, p.position.z);
-              cubes[p.id].rotation.set(p.rotation.x, p.rotation.y, p.rotation.z);
-            }
-          }
-        }
-        if(msg.type==='playerLeft') {
-          if(cubes[msg.payload.id]) {
-            scene.remove(cubes[msg.payload.id]);
-            delete cubes[msg.payload.id];
-          }
-        }
-      };
-      ws.onclose = ()=>console.log('Disconnected');
-    }
-
-    initPlayer();
+    // Init
+    fetchLobbies();
   </script>
 </body>
 </html>
