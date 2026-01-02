@@ -328,8 +328,8 @@
       if (!localGroup) return;
 
       const speed = 0.1;
-      const moveX = (keys['KeyD'] ? 1 : 0) - (keys['KeyA'] ? 1 : 0);
-      const moveZ = (keys['KeyS'] ? 1 : 0) - (keys['KeyW'] ? 1 : 0);
+      const moveX = (keys['KeyA'] ? 1 : 0) - (keys['KeyD'] ? 1 : 0);
+      const moveZ = (keys['KeyW'] ? 1 : 0) - (keys['KeyS'] ? 1 : 0);
       
       if (moveX !== 0 || moveZ !== 0) {
         const dir = new THREE.Vector3(moveX, 0, moveZ).applyAxisAngle(new THREE.Vector3(0, 1, 0), yaw).normalize();
