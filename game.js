@@ -76,10 +76,10 @@ export function initThreeJS(state, WS_BASE) {
 
         const moveSpeed = 0.1;
         const dir = new THREE.Vector3();
-        if (keys['KeyW']) dir.z -= 1;
-        if (keys['KeyS']) dir.z += 1;
-        if (keys['KeyA']) dir.x -= 1;
-        if (keys['KeyD']) dir.x += 1;
+        if (keys['KeyW']) dir.z += 1;
+        if (keys['KeyS']) dir.z -= 1;
+        if (keys['KeyA']) dir.x += 1;
+        if (keys['KeyD']) dir.x -= 1;
         dir.normalize().applyAxisAngle(new THREE.Vector3(0,1,0), yaw).multiplyScalar(moveSpeed);
         localGroup.position.add(dir);
         localGroup.rotation.y = yaw;
