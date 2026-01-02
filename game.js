@@ -76,10 +76,10 @@ export function initThreeJS(state, WS_BASE) {
 
         const moveSpeed = 0.1;
         const dir = new THREE.Vector3();
-        if (keys['KeyW']) dir.z -= 1;
-        if (keys['KeyS']) dir.z += 1;
-        if (keys['KeyA']) dir.x -= 1;
-        if (keys['KeyD']) dir.x += 1;
+        if (keys['KeyW']) dir.z += 1;
+        if (keys['KeyS']) dir.z -= 1;
+        if (keys['KeyA']) dir.x += 1;
+        if (keys['KeyD']) dir.x -= 1;
         dir.normalize().applyAxisAngle(new THREE.Vector3(0,1,0), yaw).multiplyScalar(moveSpeed);
         localGroup.position.add(dir);
         localGroup.rotation.y = yaw;
@@ -103,38 +103,18 @@ export function initThreeJS(state, WS_BASE) {
         state.remotePlayers.forEach(p=>{
             if(p.id===state.currentPlayer.id) return;
             let obj = gameData.remoteMeshes.get(p.id);
-  if (!obj) {
-    const remoteMesh = new THREE.Mesh(
-        new THREE.BoxGeometry(0.8, 1.8, 0.8),
-        new THREE.MeshStandardMaterial({ color: 0xef4444 })
-    );
-
-    // Label above player
-    const label = createLabel(p.name);
-    label.position.set(0, 2.2, 0);
-
-    // 2D floor arrow
-    const arrowGeom = new THREE.ConeGeometry(0.15, 0.3, 4); // small flat triangle
-    const arrowMat = new THREE.MeshBasicMaterial({ color: 0xffd60a });
-    const floorArrow = new THREE.Mesh(arrowGeom, arrowMat);
-    floorArrow.rotation.x = -Math.PI / 2; // flat on floor
-    floorArrow.position.set(0, 0.01, 0); // slightly above floor
-
-    scene.add(remoteMesh);
-    scene.add(label);
-    scene.add(floorArrow);
-
-    obj = { mesh: remoteMesh, label, floorArrow };
-    gameData.remoteMeshes.set(p.id, obj);
-}
-obj.mesh.position.set(p.position.x, p.position.y + 0.9, p.position.z);
-obj.mesh.rotation.y = p.rotation.y;
-
-obj.label.position.set(p.position.x, p.position.y + 2.2, p.position.z);
-
-obj.floorArrow.position.set(p.position.x, 0.01, p.position.z); // arrow on floor
-obj.floorArrow.rotation.y = p.rotation.y; // point forward
-
+            if(!obj){
+                const remoteMesh = new THREE.Mesh(new THREE.BoxGeometry(0.8,1.8,0.8), new THREE.MeshStandardMaterial({color:0xef4444}));
+                const label = createLabel(p.name);
+                label.position.set(0,2.2,0);
+                scene.add(remoteMesh);
+                scene.add(label);
+                obj = {mesh:remoteMesh,label};
+                gameData.remoteMeshes.set(p.id,obj);
+            }
+            obj.mesh.position.set(p.position.x, p.position.y+0.9, p.position.z);
+            obj.mesh.rotation.y = p.rotation.y;
+            obj.label.position.set(p.position.x, p.position.y+2.2, p.position.z);
         });
 
         renderer.render(scene,camera);
