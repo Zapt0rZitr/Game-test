@@ -1,6 +1,8 @@
 import * as THREE from 'three';
 
 export let gameData = { ws: null, scene: null, camera: null, renderer: null, localGroup: null, remoteMeshes: new Map(), animationId: null };
+const FLOOR_SIZE = 200;
+const WALL_COUNT = 40;
 
 export function initThreeJS(state, WS_BASE) {
     const canvas = document.getElementById('gameCanvas');
@@ -45,6 +47,8 @@ export function initThreeJS(state, WS_BASE) {
     const light = new THREE.DirectionalLight(0xffffff, 1);
     light.position.set(5, 10, 7.5);
     scene.add(light);
+    
+    createEnvironment(scene);
 
     const localGroup = new THREE.Group();
     const mesh = new THREE.Mesh(new THREE.BoxGeometry(0.8, 1.8, 0.8), new THREE.MeshStandardMaterial({ color: 0x3b82f6 }));
@@ -138,4 +142,43 @@ function createLabel(name){
     const sprite = new THREE.Sprite(material);
     sprite.scale.set(canvas.width/140, canvas.height/140, 1);
     return sprite;
+}
+function createEnvironment(scene) {
+    // ===== FLOOR =====
+    const floorGeo = new THREE.PlaneGeometry(FLOOR_SIZE, FLOOR_SIZE);
+    const floorMat = new THREE.MeshStandardMaterial({
+        color: 0x020617,
+        roughness: 0.9,
+        metalness: 0.05
+    });
+
+    const floor = new THREE.Mesh(floorGeo, floorMat);
+    floor.rotation.x = -Math.PI / 2;
+    floor.receiveShadow = true;
+    scene.add(floor);
+
+    // ===== WALLS =====
+    const wallMat = new THREE.MeshStandardMaterial({
+        color: 0x334155,
+        roughness: 0.6
+    });
+
+    for (let i = 0; i < WALL_COUNT; i++) {
+        const width = THREE.MathUtils.randFloat(2, 6);
+        const height = THREE.MathUtils.randFloat(2, 5);
+        const depth = THREE.MathUtils.randFloat(2, 6);
+
+        const wallGeo = new THREE.BoxGeometry(width, height, depth);
+        const wall = new THREE.Mesh(wallGeo, wallMat);
+
+        wall.position.set(
+            THREE.MathUtils.randFloatSpread(FLOOR_SIZE * 0.8),
+            height / 2,
+            THREE.MathUtils.randFloatSpread(FLOOR_SIZE * 0.8)
+        );
+
+        wall.castShadow = true;
+        wall.receiveShadow = true;
+        scene.add(wall);
+    }
 }
