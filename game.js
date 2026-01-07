@@ -4,6 +4,16 @@ export let gameData = { ws: null, scene: null, camera: null, renderer: null, loc
 const FLOOR_SIZE = 200;
 const WALL_COUNT = 40;
 
+
+let darkMode = false;
+let radarPulse = null;
+let radarTime = 0;
+
+const RADAR_MAX_RADIUS = 6;
+const RADAR_DURATION = 2.5;
+
+
+
 export function initThreeJS(state, WS_BASE) {
     const canvas = document.getElementById('gameCanvas');
     if (!canvas || gameData.scene) return;
@@ -47,7 +57,7 @@ export function initThreeJS(state, WS_BASE) {
     const light = new THREE.DirectionalLight(0xffffff, 1);
     light.position.set(5, 10, 7.5);
     scene.add(light);
-    
+
     createEnvironment(scene);
 
     const localGroup = new THREE.Group();
@@ -67,6 +77,17 @@ export function initThreeJS(state, WS_BASE) {
     window.onkeydown = e => keys[e.code] = true;
     window.onkeyup = e => keys[e.code] = false;
     canvas.onclick = () => canvas.requestPointerLock();
+    window.onkeydown = (e) => {
+    keys[e.code] = true;
+
+    if (e.code === 'KeyO') {
+        toggleDarkMode(scene);
+    }
+
+    if (e.code === 'KeyQ') {
+        triggerRadar(scene, localGroup.position);
+    }
+};
     window.onmousemove = e => {
         if (document.pointerLockElement === canvas) {
             yaw -= e.movementX * 0.002;
@@ -74,8 +95,11 @@ export function initThreeJS(state, WS_BASE) {
             pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, pitch));
         }
     };
+let lastTime = performance.now();
 
-    function animate() {
+function animate(time = performance.now()) {
+    const deltaTime = (time - lastTime) / 1000;
+    lastTime = time;
         gameData.animationId = requestAnimationFrame(animate);
 
         const moveSpeed = 0.1;
@@ -120,9 +144,11 @@ export function initThreeJS(state, WS_BASE) {
             obj.mesh.rotation.y = p.rotation.y;
             obj.label.position.set(p.position.x, p.position.y+2.2, p.position.z);
         });
+    updateRadar(scene, deltaTime);
 
         renderer.render(scene,camera);
     }
+    
     animate();
 }
 
@@ -156,6 +182,9 @@ function createEnvironment(scene) {
     floor.rotation.x = -Math.PI / 2;
     floor.receiveShadow = true;
     scene.add(floor);
+    scene.userData.floor = floor;
+
+
 
     // ===== WALLS =====
     const wallMat = new THREE.MeshStandardMaterial({
@@ -181,4 +210,110 @@ function createEnvironment(scene) {
         wall.receiveShadow = true;
         scene.add(wall);
     }
+    scene.userData.walls ??= [];
+    scene.userData.walls.push(wall);
+
+}
+
+function toggleDarkMode(scene) {
+    darkMode = !darkMode;
+
+    // Background
+    scene.background = new THREE.Color(darkMode ? 0x000000 : 0x020617);
+
+    // Hide grid
+    scene.children.forEach(obj => {
+        if (obj.type === 'GridHelper') {
+            obj.visible = !darkMode;
+        }
+    });
+
+    // Hide labels
+    gameData.remoteMeshes.forEach(obj => {
+        obj.label.visible = !darkMode;
+    });
+
+    if (gameData.localGroup) {
+        gameData.localGroup.children.forEach(c => {
+            if (c.type === 'Sprite') c.visible = !darkMode;
+        });
+    }
+
+    // Darken environment
+    const env = scene.userData;
+    if (env.floor) env.floor.material.color.set(darkMode ? 0x000000 : 0x020617);
+    env.walls?.forEach(w =>
+        w.material.color.set(darkMode ? 0x000000 : 0x334155)
+    );
+}
+
+function triggerRadar(scene, position) {
+    if (radarPulse) return;
+
+    radarTime = 0;
+
+    radarPulse = {
+        radius: 0,
+        origin: position.clone(),
+        overlays: []
+    };
+}
+
+function updateRadar(scene, deltaTime) {
+    if (!radarPulse) return;
+
+    radarTime += deltaTime;
+    radarPulse.radius += deltaTime * (RADAR_MAX_RADIUS / 0.8);
+
+    if (radarPulse.radius > RADAR_MAX_RADIUS || radarTime > RADAR_DURATION) {
+        radarPulse.overlays.forEach(o => scene.remove(o));
+        radarPulse = null;
+        return;
+    }
+
+    const raycaster = new THREE.Raycaster();
+    const directions = 64;
+
+    for (let i = 0; i < directions; i++) {
+        const angle = (i / directions) * Math.PI * 2;
+        const dir = new THREE.Vector3(Math.cos(angle), 0, Math.sin(angle));
+
+        raycaster.set(radarPulse.origin.clone().add(new THREE.Vector3(0,1.2,0)), dir);
+        raycaster.far = radarPulse.radius;
+
+        const hits = raycaster.intersectObjects([
+            scene.userData.floor,
+            ...(scene.userData.walls || [])
+        ]);
+
+        if (hits.length > 0) {
+            createRadarOverlay(scene, hits[0]);
+        }
+    }
+}
+
+function createRadarOverlay(scene, hit) {
+    const size = 0.8;
+
+    const geo = new THREE.PlaneGeometry(size, size);
+    const mat = new THREE.MeshBasicMaterial({
+        color: 0x38bdf8,
+        wireframe: true,
+        transparent: true,
+        opacity: 0.7,
+        depthWrite: false
+    });
+
+    const overlay = new THREE.Mesh(geo, mat);
+    overlay.position.copy(hit.point);
+    overlay.position.add(hit.face.normal.clone().multiplyScalar(0.01));
+    overlay.lookAt(hit.point.clone().add(hit.face.normal));
+
+    scene.add(overlay);
+    radarPulse.overlays.push(overlay);
+
+    // Fade out
+    setTimeout(() => {
+        scene.remove(overlay);
+    }, 1800);
 }
