@@ -1,20 +1,16 @@
 import * as THREE from 'three';
 
 export let gameData = { ws: null, scene: null, camera: null, renderer: null, localGroup: null, remoteMeshes: new Map(), animationId: null };
+
 const FLOOR_SIZE = 200;
 const WALL_COUNT = 40;
 
-
 let darkMode = false;
-let radarPulse = null;
-let radarTime = 0;
-let lastRadarStep = 0;
-const RADAR_STEP = 0.4;
-
+let radar = null;
 const RADAR_MAX_RADIUS = 6;
-const RADAR_DURATION = 2.5;
-
-
+const RADAR_SPEED = 6; // units per second
+const RADAR_HEIGHT = 5;
+const revealedMeshes = new Set();
 
 export function initThreeJS(state, WS_BASE) {
     const canvas = document.getElementById('gameCanvas');
@@ -29,11 +25,9 @@ export function initThreeJS(state, WS_BASE) {
 
     ws.onmessage = (e) => {
         const msg = JSON.parse(e.data);
-        if (msg.type === 'gameState') {
-            state.remotePlayers = msg.players;
-        } else if (msg.type === 'playerJoined') {
-            state.remotePlayers.push(msg.payload);
-        } else if (msg.type === 'playerLeft') {
+        if (msg.type === 'gameState') state.remotePlayers = msg.players;
+        else if (msg.type === 'playerJoined') state.remotePlayers.push(msg.payload);
+        else if (msg.type === 'playerLeft') {
             state.remotePlayers = state.remotePlayers.filter(p => p.id !== msg.payload.id);
             const meshObj = gameData.remoteMeshes.get(msg.payload.id);
             if (meshObj) {
@@ -48,6 +42,7 @@ export function initThreeJS(state, WS_BASE) {
         }
     };
 
+    // ===== SCENE / CAMERA / RENDERER =====
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0x020617);
     const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
@@ -62,6 +57,7 @@ export function initThreeJS(state, WS_BASE) {
 
     createEnvironment(scene);
 
+    // ===== LOCAL PLAYER =====
     const localGroup = new THREE.Group();
     const mesh = new THREE.Mesh(new THREE.BoxGeometry(0.8, 1.8, 0.8), new THREE.MeshStandardMaterial({ color: 0x3b82f6 }));
     mesh.position.y = 0.9;
@@ -74,38 +70,33 @@ export function initThreeJS(state, WS_BASE) {
 
     gameData = { ...gameData, scene, camera, renderer, localGroup };
 
+    // ===== INPUTS =====
     let yaw = 0, pitch = 0;
     const keys = {};
-window.onkeydown = (e) => {
-    keys[e.code] = true;
-
-    if (e.code === 'KeyO') {
-        toggleDarkMode(scene);
-    }
-
-    if (e.code === 'KeyQ') {
-        triggerRadar(scene, localGroup.position);
-    }
-};
-
-window.onkeyup = e => keys[e.code] = false;
-
+    window.onkeydown = e => keys[e.code] = true;
+    window.onkeyup = e => keys[e.code] = false;
     canvas.onclick = () => canvas.requestPointerLock();
-
     window.onmousemove = e => {
         if (document.pointerLockElement === canvas) {
             yaw -= e.movementX * 0.002;
             pitch -= e.movementY * 0.002;
-            pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, pitch));
+            pitch = Math.max(-Math.PI/2, Math.min(Math.PI/2, pitch));
         }
     };
-let lastTime = performance.now();
+    window.onkeydown = (e) => {
+        keys[e.code] = true;
+        if (e.code === 'KeyO') toggleDarkMode(scene);
+        if (e.code === 'KeyQ') triggerRadar(scene, localGroup.position);
+    };
 
-function animate(time = performance.now()) {
-    const deltaTime = (time - lastTime) / 1000;
-    lastTime = time;
+    // ===== ANIMATION LOOP =====
+    let lastTime = performance.now();
+    function animate(time = performance.now()) {
+        const deltaTime = (time - lastTime)/1000;
+        lastTime = time;
         gameData.animationId = requestAnimationFrame(animate);
 
+        // ===== MOVEMENT =====
         const moveSpeed = 0.1;
         const dir = new THREE.Vector3();
         if (keys['KeyW']) dir.z += 1;
@@ -118,21 +109,22 @@ function animate(time = performance.now()) {
 
         camera.position.set(localGroup.position.x, localGroup.position.y + 1.6, localGroup.position.z);
         const target = new THREE.Vector3(
-            localGroup.position.x + Math.sin(yaw) * Math.cos(pitch),
+            localGroup.position.x + Math.sin(yaw)*Math.cos(pitch),
             localGroup.position.y + 1.6 + Math.sin(pitch),
-            localGroup.position.z + Math.cos(yaw) * Math.cos(pitch)
+            localGroup.position.z + Math.cos(yaw)*Math.cos(pitch)
         );
         camera.lookAt(target);
 
         if(ws.readyState === WebSocket.OPEN){
             ws.send(JSON.stringify({
                 type:'update',
-                position: {x:localGroup.position.x, y:localGroup.position.y, z:localGroup.position.z},
-                rotation: {x:pitch, y:yaw, z:0}
+                position:{x:localGroup.position.x, y:localGroup.position.y, z:localGroup.position.z},
+                rotation:{x:pitch, y:yaw, z:0}
             }));
         }
 
-        state.remotePlayers.forEach(p=>{
+        // ===== REMOTE PLAYERS =====
+        state.remotePlayers.forEach(p => {
             if(p.id===state.currentPlayer.id) return;
             let obj = gameData.remoteMeshes.get(p.id);
             if(!obj){
@@ -141,21 +133,24 @@ function animate(time = performance.now()) {
                 label.position.set(0,2.2,0);
                 scene.add(remoteMesh);
                 scene.add(label);
-                obj = {mesh:remoteMesh,label};
+                obj = {mesh:remoteMesh, label};
                 gameData.remoteMeshes.set(p.id,obj);
             }
             obj.mesh.position.set(p.position.x, p.position.y+0.9, p.position.z);
             obj.mesh.rotation.y = p.rotation.y;
             obj.label.position.set(p.position.x, p.position.y+2.2, p.position.z);
         });
-    updateRadar(scene, deltaTime);
 
-        renderer.render(scene,camera);
+        // ===== RADAR =====
+        updateRadar(scene, deltaTime);
+
+        renderer.render(scene, camera);
     }
-    
+
     animate();
 }
 
+// ===== LABELS =====
 function createLabel(name){
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d');
@@ -168,166 +163,131 @@ function createLabel(name){
     ctx.textAlign='center';
     ctx.fillText(name,canvas.width/2,48);
     const texture = new THREE.CanvasTexture(canvas);
-    const material = new THREE.SpriteMaterial({map:texture,depthTest:false});
+    const material = new THREE.SpriteMaterial({map:texture, depthTest:false});
     const sprite = new THREE.Sprite(material);
     sprite.scale.set(canvas.width/140, canvas.height/140, 1);
     return sprite;
 }
-function createEnvironment(scene) {
-    // ===== FLOOR =====
-    const floorGeo = new THREE.PlaneGeometry(FLOOR_SIZE, FLOOR_SIZE);
-    const floorMat = new THREE.MeshStandardMaterial({
-        color: 0x020617,
-        roughness: 0.9,
-        metalness: 0.05
-    });
 
+// ===== ENVIRONMENT =====
+function createEnvironment(scene){
+    // Floor
+    const floorGeo = new THREE.PlaneGeometry(FLOOR_SIZE, FLOOR_SIZE);
+    const floorMat = new THREE.MeshStandardMaterial({color:0x020617, roughness:0.9, metalness:0.05});
     const floor = new THREE.Mesh(floorGeo, floorMat);
-    floor.rotation.x = -Math.PI / 2;
+    floor.rotation.x = -Math.PI/2;
     floor.receiveShadow = true;
     scene.add(floor);
     scene.userData.floor = floor;
 
-
-
-    // ===== WALLS =====
-    const wallMat = new THREE.MeshStandardMaterial({
-        color: 0x334155,
-        roughness: 0.6
-    });
-
-    scene.userData.walls ??= [];
-    
-    for (let i = 0; i < WALL_COUNT; i++) {
-        const width = THREE.MathUtils.randFloat(2, 6);
-        const height = THREE.MathUtils.randFloat(2, 5);
-        const depth = THREE.MathUtils.randFloat(2, 6);
-
-        const wallGeo = new THREE.BoxGeometry(width, height, depth);
+    // Walls
+    const wallMat = new THREE.MeshStandardMaterial({color:0x334155, roughness:0.6});
+    scene.userData.walls = [];
+    for(let i=0;i<WALL_COUNT;i++){
+        const width = THREE.MathUtils.randFloat(2,6);
+        const height = THREE.MathUtils.randFloat(2,5);
+        const depth = THREE.MathUtils.randFloat(2,6);
+        const wallGeo = new THREE.BoxGeometry(width,height,depth);
         const wall = new THREE.Mesh(wallGeo, wallMat);
-
         wall.position.set(
-            THREE.MathUtils.randFloatSpread(FLOOR_SIZE * 0.8),
-            height / 2,
-            THREE.MathUtils.randFloatSpread(FLOOR_SIZE * 0.8)
+            THREE.MathUtils.randFloatSpread(FLOOR_SIZE*0.8),
+            height/2,
+            THREE.MathUtils.randFloatSpread(FLOOR_SIZE*0.8)
         );
-
         wall.castShadow = true;
         wall.receiveShadow = true;
         scene.add(wall);
         scene.userData.walls.push(wall);
     }
-
-
-
 }
 
-function toggleDarkMode(scene) {
+// ===== DARK MODE =====
+function toggleDarkMode(scene){
     darkMode = !darkMode;
-
-    // Background
-    scene.background = new THREE.Color(darkMode ? 0x000000 : 0x020617);
-
-    // Hide grid
-    scene.children.forEach(obj => {
-        if (obj.type === 'GridHelper') {
-            obj.visible = !darkMode;
-        }
+    scene.background.set(darkMode?0x000000:0x020617);
+    scene.children.forEach(obj=>{
+        if(obj.type==='GridHelper') obj.visible = !darkMode;
     });
-
-    // Hide labels
-    gameData.remoteMeshes.forEach(({ label }) => {
-        label.visible = !darkMode;
+    gameData.remoteMeshes.forEach(obj=>{
+        obj.label.visible = !darkMode;
     });
-
-
-    if (gameData.localGroup) {
-        gameData.localGroup.children.forEach(c => {
-            if (c.type === 'Sprite') c.visible = !darkMode;
+    if(gameData.localGroup){
+        gameData.localGroup.children.forEach(c=>{
+            if(c.type==='Sprite') c.visible = !darkMode;
         });
     }
-
-    // Darken environment
     const env = scene.userData;
-    if (env.floor) env.floor.material.color.set(darkMode ? 0x000000 : 0x020617);
+    if(env.floor) env.floor.visible = !darkMode;
     env.walls?.forEach(w => w.visible = !darkMode);
-    if (env.floor) env.floor.visible = !darkMode;
-
-    
 }
 
-function triggerRadar(scene, position) {
-    if (radarPulse) return;
-    lastRadarStep = 0;
-
-    radarTime = 0;
-
-    radarPulse = {
-        radius: 0,
+// ===== RADAR =====
+function triggerRadar(scene, position){
+    if(radar) return;
+    radar = {
         origin: position.clone(),
-        overlays: []
+        radius: 0,
+        ring: createRadarRing(scene)
     };
 }
 
-function updateRadar(scene, deltaTime) {
-    if (!radarPulse) return;
+function createRadarRing(scene){
+    const geo = new THREE.RingGeometry(0.95,1,64);
+    const mat = new THREE.MeshBasicMaterial({color:0x38bdf8, transparent:true, opacity:0.9, side:THREE.DoubleSide});
+    const ring = new THREE.Mesh(geo, mat);
+    ring.rotation.x=-Math.PI/2;
+    ring.position.y=0.05;
+    scene.add(ring);
+    return ring;
+}
 
-    radarTime += deltaTime;
-    radarPulse.radius += deltaTime * (RADAR_MAX_RADIUS / 0.8);
-
-    if (radarPulse.radius - lastRadarStep < RADAR_STEP) return;
-    lastRadarStep = radarPulse.radius;
-
-
-    const raycaster = new THREE.Raycaster();
-    const directions = 64;
-
-    for (let i = 0; i < directions; i++) {
-        const angle = (i / directions) * Math.PI * 2;
-        const dir = new THREE.Vector3(Math.cos(angle), 0, Math.sin(angle));
-
-        raycaster.set(radarPulse.origin.clone().add(new THREE.Vector3(0,1.2,0)), dir);
-        raycaster.far = radarPulse.radius;
-
-        const hits = raycaster.intersectObjects([
-            scene.userData.floor,
-            ...(scene.userData.walls || [])
-        ]);
-
-        if (hits.length > 0) {
-            createRadarOverlay(scene, hits[0]);
-        }
+function updateRadar(scene, deltaTime){
+    if(!radar) return;
+    radar.radius += RADAR_SPEED * deltaTime;
+    radar.ring.scale.set(radar.radius, radar.radius, 1);
+    radar.ring.position.copy(radar.origin);
+    revealSurfaces(scene, radar);
+    if(radar.radius >= RADAR_MAX_RADIUS){
+        scene.remove(radar.ring);
+        radar = null;
     }
 }
 
-function createRadarOverlay(scene, hit) {
-    const size = 0.8;
-
-    const geo = new THREE.PlaneGeometry(size, size);
-    const mat = new THREE.MeshBasicMaterial({
-        color: 0x38bdf8,
-        wireframe: true,
-        transparent: true,
-        opacity: 0.7,
-        depthWrite: false
+function revealSurfaces(scene, radar){
+    const objects = [scene.userData.floor, ...(scene.userData.walls || [])];
+    const raycaster = new THREE.Raycaster();
+    objects.forEach(obj=>{
+        if(!obj || revealedMeshes.has(obj)) return;
+        const box = new THREE.Box3().setFromObject(obj);
+        const center = box.getCenter(new THREE.Vector3());
+        const dx = center.x - radar.origin.x;
+        const dz = center.z - radar.origin.z;
+        const dist = Math.sqrt(dx*dx + dz*dz);
+        if(dist>radar.radius) return;
+        const dir = center.clone().sub(radar.origin).normalize();
+        raycaster.set(radar.origin.clone().add(new THREE.Vector3(0,1.2,0)), dir);
+        raycaster.far = dist+0.2;
+        const hits = raycaster.intersectObjects(objects,true);
+        if(hits.length && hits[0].object!==obj) return;
+        applyGridReveal(obj, radar.origin, radar.radius);
+        revealedMeshes.add(obj);
     });
-
-    const overlay = new THREE.Mesh(geo, mat);
-    overlay.position.copy(hit.point);
-    overlay.position.add(hit.face.normal.clone().multiplyScalar(0.01));
-    // overlay.lookAt(hit.point.clone().add(hit.face.normal));
-
-if (hit.object === scene.userData.floor) {
-    overlay.rotation.x = -Math.PI / 2;
-} else {
-    overlay.lookAt(hit.point.clone().add(hit.face.normal));
 }
 
-    scene.add(overlay);
-    radarPulse.overlays.push(overlay);
-
-    // Fade out
-    setTimeout(() => {
-        scene.remove(overlay);
-    }, 1800);
+function applyGridReveal(mesh, origin, radius){
+    const gridMat = new THREE.MeshBasicMaterial({color:0x38bdf8, wireframe:true, transparent:true, opacity:0.7, depthWrite:false});
+    const overlay = new THREE.Mesh(mesh.geometry.clone(), gridMat);
+    overlay.position.copy(mesh.position);
+    overlay.rotation.copy(mesh.rotation);
+    overlay.scale.copy(mesh.scale);
+    overlay.onBeforeRender = function(){
+        overlay.material.clippingPlanes = [
+            new THREE.Plane(new THREE.Vector3(1,0,0), -(origin.x+radius)),
+            new THREE.Plane(new THREE.Vector3(-1,0,0), origin.x-radius),
+            new THREE.Plane(new THREE.Vector3(0,0,1), -(origin.z+radius)),
+            new THREE.Plane(new THREE.Vector3(0,0,-1), origin.z-radius)
+        ];
+        overlay.material.clipIntersection = true;
+    };
+    mesh.parent.add(overlay);
 }
