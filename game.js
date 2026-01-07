@@ -8,6 +8,8 @@ const WALL_COUNT = 40;
 let darkMode = false;
 let radarPulse = null;
 let radarTime = 0;
+let lastRadarStep = 0;
+const RADAR_STEP = 0.4;
 
 const RADAR_MAX_RADIUS = 6;
 const RADAR_DURATION = 2.5;
@@ -74,10 +76,7 @@ export function initThreeJS(state, WS_BASE) {
 
     let yaw = 0, pitch = 0;
     const keys = {};
-    window.onkeydown = e => keys[e.code] = true;
-    window.onkeyup = e => keys[e.code] = false;
-    canvas.onclick = () => canvas.requestPointerLock();
-    window.onkeydown = (e) => {
+window.onkeydown = (e) => {
     keys[e.code] = true;
 
     if (e.code === 'KeyO') {
@@ -88,6 +87,11 @@ export function initThreeJS(state, WS_BASE) {
         triggerRadar(scene, localGroup.position);
     }
 };
+
+window.onkeyup = e => keys[e.code] = false;
+
+    canvas.onclick = () => canvas.requestPointerLock();
+
     window.onmousemove = e => {
         if (document.pointerLockElement === canvas) {
             yaw -= e.movementX * 0.002;
@@ -192,6 +196,8 @@ function createEnvironment(scene) {
         roughness: 0.6
     });
 
+    scene.userData.walls ??= [];
+    
     for (let i = 0; i < WALL_COUNT; i++) {
         const width = THREE.MathUtils.randFloat(2, 6);
         const height = THREE.MathUtils.randFloat(2, 5);
@@ -209,9 +215,10 @@ function createEnvironment(scene) {
         wall.castShadow = true;
         wall.receiveShadow = true;
         scene.add(wall);
+        scene.userData.walls.push(wall);
     }
-    scene.userData.walls ??= [];
-    scene.userData.walls.push(wall);
+
+
 
 }
 
@@ -229,9 +236,10 @@ function toggleDarkMode(scene) {
     });
 
     // Hide labels
-    gameData.remoteMeshes.forEach(obj => {
-        obj.label.visible = !darkMode;
+    gameData.remoteMeshes.forEach(({ label }) => {
+        label.visible = !darkMode;
     });
+
 
     if (gameData.localGroup) {
         gameData.localGroup.children.forEach(c => {
@@ -242,13 +250,15 @@ function toggleDarkMode(scene) {
     // Darken environment
     const env = scene.userData;
     if (env.floor) env.floor.material.color.set(darkMode ? 0x000000 : 0x020617);
-    env.walls?.forEach(w =>
-        w.material.color.set(darkMode ? 0x000000 : 0x334155)
-    );
+    env.walls?.forEach(w => w.visible = !darkMode);
+    if (env.floor) env.floor.visible = !darkMode;
+
+    
 }
 
 function triggerRadar(scene, position) {
     if (radarPulse) return;
+    lastRadarStep = 0;
 
     radarTime = 0;
 
@@ -265,11 +275,9 @@ function updateRadar(scene, deltaTime) {
     radarTime += deltaTime;
     radarPulse.radius += deltaTime * (RADAR_MAX_RADIUS / 0.8);
 
-    if (radarPulse.radius > RADAR_MAX_RADIUS || radarTime > RADAR_DURATION) {
-        radarPulse.overlays.forEach(o => scene.remove(o));
-        radarPulse = null;
-        return;
-    }
+    if (radarPulse.radius - lastRadarStep < RADAR_STEP) return;
+    lastRadarStep = radarPulse.radius;
+
 
     const raycaster = new THREE.Raycaster();
     const directions = 64;
@@ -307,7 +315,13 @@ function createRadarOverlay(scene, hit) {
     const overlay = new THREE.Mesh(geo, mat);
     overlay.position.copy(hit.point);
     overlay.position.add(hit.face.normal.clone().multiplyScalar(0.01));
+    // overlay.lookAt(hit.point.clone().add(hit.face.normal));
+
+if (hit.object === scene.userData.floor) {
+    overlay.rotation.x = -Math.PI / 2;
+} else {
     overlay.lookAt(hit.point.clone().add(hit.face.normal));
+}
 
     scene.add(overlay);
     radarPulse.overlays.push(overlay);
